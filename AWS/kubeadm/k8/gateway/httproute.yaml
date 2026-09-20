@@ -1,0 +1,28 @@
+# The routing rules, owned by the app team. Same intent as the Ingress in
+# ingress/app-ingress.yaml, expressed with the Gateway API. Path precedence is
+# defined by the spec (longest match wins), not by rule order.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: three-tier
+  namespace: three-tier
+spec:
+  parentRefs:
+    - name: app-gateway
+  hostnames:
+    - app.local
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: api
+          port: 80
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: frontend
+          port: 80

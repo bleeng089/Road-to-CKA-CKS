@@ -1,0 +1,43 @@
+# Terraform state — contains resource details and any sensitive values
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Saved plan files
+tfplan
+*.tfplan
+
+# Provider binaries and module cache (.terraform.lock.hcl SHOULD be committed)
+.terraform/
+
+# Local variable values — admin_cidr and key paths are personal
+terraform.tfvars
+*.auto.tfvars
+*.auto.tfvars.json
+
+# Override files, usually local experiments
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Downloaded cluster credentials (kubeconfig_retrieval_commands writes these)
+*.kubeconfig
+kubeconfig
+
+# Third-party manifests fetched while following the lessons — the lessons
+# apply these straight from their upstream URLs, so they are never vendored
+# (e.g. the ingress-nginx controller bundle in Module 6)
+deploy.yaml
+
+# Crash logs
+crash.log
+crash.*.log
+
+# CLI config
+.terraformrc
+terraform.rc
+
+# Editor/OS noise
+.DS_Store
+*.swp

@@ -1,0 +1,28 @@
+# L7 routing: one entry point (the ingress-nginx controller) fans out to two
+# Services by host + path. Longest matching path wins, so /api/... goes to the
+# api Service and everything else to frontend.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: three-tier
+  namespace: three-tier
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: app.local
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

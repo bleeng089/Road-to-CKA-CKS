@@ -1,0 +1,26 @@
+# NetworkPolicies are additive: this one gives every pod in the namespace
+# egress to CoreDNS (and nothing else). The kube-system namespace is matched
+# by the kubernetes.io/metadata.name label the control plane maintains on
+# every namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: three-tier
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

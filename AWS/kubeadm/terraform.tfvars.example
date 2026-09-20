@@ -1,0 +1,47 @@
+# Copy this file to terraform.tfvars and edit it. Terraform reads
+# terraform.tfvars automatically during plan and apply.
+#
+#   Windows PowerShell:  Copy-Item terraform.tfvars.example terraform.tfvars
+#   Windows cmd:         copy terraform.tfvars.example terraform.tfvars
+#   macOS / Linux:       cp terraform.tfvars.example terraform.tfvars
+
+# --------------------------------------------------------------------------
+# REQUIRED: your public IP address with a /32 suffix. Only this CIDR may
+# reach the Kubernetes API (and SSH, if enabled). Find your public IP by
+# opening https://checkip.amazonaws.com in a browser.
+# --------------------------------------------------------------------------
+admin_cidr = "203.0.113.25/32"
+
+# --------------------------------------------------------------------------
+# Common settings (defaults shown; uncomment to change)
+# --------------------------------------------------------------------------
+# project_name = "kubeadm-lab"
+# aws_region   = "us-east-1"
+
+# Named AWS CLI profile. Leave commented to use the default credential chain.
+# aws_profile = "training"
+
+# instance_type       = "t3.medium"
+# root_volume_size_gb = 30
+
+# --------------------------------------------------------------------------
+# Software versions
+# --------------------------------------------------------------------------
+# ubuntu_release     = "24.04"
+# kubernetes_version = "1.33"     # MAJOR.MINOR only; newest patch is installed
+# calico_version     = "v3.30.2"
+
+# --------------------------------------------------------------------------
+# Networking (defaults are non-overlapping; change all four together if you
+# customize)
+# --------------------------------------------------------------------------
+# vpc_cidr     = "10.0.0.0/16"
+# subnet_cidr  = "10.0.1.0/24"
+# pod_cidr     = "192.168.0.0/16"
+# service_cidr = "10.96.0.0/12"
+
+# --------------------------------------------------------------------------
+# Optional SSH access (Session Manager works without any of this)
+# --------------------------------------------------------------------------
+# ssh_enabled         = true
+# ssh_public_key_path = "~/.ssh/id_ed25519.pub"

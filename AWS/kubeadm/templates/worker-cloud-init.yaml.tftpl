@@ -1,0 +1,143 @@
+#cloud-config
+# Worker node bootstrap for the kubeadm AWS lab.
+# Rendered by Terraform templatefile(); interpolation placeholders are filled
+# in by Terraform before the instance boots.
+
+hostname: worker
+manage_etc_hosts: true
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - apt-transport-https
+  - bash-completion
+  - ca-certificates
+  - conntrack
+  - containerd
+  - curl
+  - gpg
+  - unzip
+
+write_files:
+  - path: /opt/k8s-lab/bootstrap.sh
+    permissions: "0755"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      # Worker bootstrap: container runtime and kubelet, then wait for the
+      # control plane (via SSM Parameter Store) and join the cluster.
+      set -Eeuo pipefail
+      exec > >(tee -a /var/log/k8s-bootstrap.log) 2>&1
+
+      export DEBIAN_FRONTEND=noninteractive
+      export AWS_DEFAULT_REGION="${aws_region}"
+      PARAM_PREFIX="${param_prefix}"
+      K8S_MINOR="${kubernetes_version}"
+      APT_FLAGS="-y -o DPkg::Lock::Timeout=300"
+
+      echo "=== [$(date -Is)] worker bootstrap starting ==="
+
+      # ---- AWS CLI v2 (official installer; handles x86_64 and aarch64) ----
+      if ! command -v aws >/dev/null 2>&1; then
+        curl -fsSLo /tmp/awscliv2.zip "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip"
+        unzip -q /tmp/awscliv2.zip -d /tmp
+        /tmp/aws/install
+        rm -rf /tmp/aws /tmp/awscliv2.zip
+      fi
+
+      fail_handler() {
+        echo "=== [$(date -Is)] bootstrap FAILED - see /var/log/k8s-bootstrap.log ==="
+        aws ssm put-parameter --name "$PARAM_PREFIX/worker/status" \
+          --type String --overwrite --value "failed" || true
+      }
+      trap fail_handler ERR
+
+      aws ssm put-parameter --name "$PARAM_PREFIX/worker/status" \
+        --type String --overwrite --value "bootstrapping"
+
+      # ---- Kernel modules and sysctl required by Kubernetes ----
+      cat > /etc/modules-load.d/k8s.conf <<'EOF'
+      overlay
+      br_netfilter
+      EOF
+      modprobe overlay
+      modprobe br_netfilter
+
+      cat > /etc/sysctl.d/99-kubernetes.conf <<'EOF'
+      net.bridge.bridge-nf-call-iptables  = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.ipv4.ip_forward                 = 1
+      EOF
+      sysctl --system
+
+      # ---- Disable swap ----
+      swapoff -a
+      sed -ri 's/^([^#].*[[:space:]]swap[[:space:]].*)$/#\1/' /etc/fstab || true
+
+      # ---- containerd with systemd cgroups ----
+      mkdir -p /etc/containerd
+      containerd config default > /etc/containerd/config.toml
+      sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+      sed -i 's|sandbox_image = ".*"|sandbox_image = "registry.k8s.io/pause:3.10"|' /etc/containerd/config.toml
+      systemctl enable containerd
+      systemctl restart containerd
+
+      # ---- crictl talks to containerd ----
+      cat > /etc/crictl.yaml <<'EOF'
+      runtime-endpoint: unix:///run/containerd/containerd.sock
+      image-endpoint: unix:///run/containerd/containerd.sock
+      EOF
+
+      # ---- Kubernetes packages from pkgs.k8s.io ----
+      mkdir -p /etc/apt/keyrings
+      curl -fsSL "https://pkgs.k8s.io/core:/stable:/v$K8S_MINOR/deb/Release.key" \
+        | gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v$K8S_MINOR/deb/ /" \
+        > /etc/apt/sources.list.d/kubernetes.list
+      apt-get $APT_FLAGS update || (sleep 15 && apt-get $APT_FLAGS update)
+      apt-get $APT_FLAGS install kubelet kubeadm kubectl
+      apt-mark hold kubelet kubeadm kubectl containerd
+      systemctl enable kubelet
+
+      # ---- Skip the join if this node is already part of a cluster ----
+      if [ -f /etc/kubernetes/kubelet.conf ]; then
+        echo "node already joined; nothing to do"
+        aws ssm put-parameter --name "$PARAM_PREFIX/worker/status" \
+          --type String --overwrite --value "ready"
+        exit 0
+      fi
+
+      # ---- Wait for the control plane. Terraform ordering says nothing about
+      # ---- cloud-init completion, so poll the status parameter (30 min max).
+      echo "waiting for the control plane to publish status=ready"
+      CP_STATUS="pending"
+      for i in $(seq 1 120); do
+        CP_STATUS=$(aws ssm get-parameter --name "$PARAM_PREFIX/control-plane/status" \
+          --query Parameter.Value --output text 2>/dev/null || echo "pending")
+        if [ "$CP_STATUS" = "ready" ]; then break; fi
+        if [ "$CP_STATUS" = "failed" ]; then
+          echo "control-plane bootstrap reported failure; aborting join"
+          exit 1
+        fi
+        echo "control-plane status: $CP_STATUS (attempt $i/120)"
+        sleep 15
+      done
+      if [ "$CP_STATUS" != "ready" ]; then
+        echo "timed out waiting for the control plane"
+        exit 1
+      fi
+
+      # ---- Join the cluster (the join command targets the control plane's
+      # ---- private IP, because kubeadm advertises the private address) ----
+      JOIN_CMD=$(aws ssm get-parameter --name "$PARAM_PREFIX/join-command" \
+        --with-decryption --query Parameter.Value --output text)
+      echo "joining the cluster"
+      eval "$JOIN_CMD --node-name worker"
+
+      aws ssm put-parameter --name "$PARAM_PREFIX/worker/status" \
+        --type String --overwrite --value "ready"
+      echo "=== [$(date -Is)] worker bootstrap complete ==="
+
+runcmd:
+  - [/opt/k8s-lab/bootstrap.sh]

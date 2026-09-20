@@ -1,0 +1,25 @@
+# The gotcha policy. The tester pod lives in the same namespace, so the
+# default-deny catches ITS egress too — frontend's open ingress alone does
+# not help a client that is not allowed to send. Real clusters hit this
+# constantly: monitoring agents, migration Jobs, debug pods all need their
+# own egress once a namespace goes default-deny. (kubectl run labeled the
+# pod run=tester automatically.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tester-egress-to-edge
+  namespace: three-tier
+spec:
+  podSelector:
+    matchLabels:
+      run: tester
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: frontend
+      ports:
+        - protocol: TCP
+          port: 8080

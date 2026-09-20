@@ -1,0 +1,17 @@
+# Implementation-specific tuning, attached to the Gateway through
+# infrastructure.parametersRef (see gateway.yaml). By default Envoy Gateway
+# exposes each Gateway with a LoadBalancer Service; on a cluster with no
+# load-balancer controller that Service stays <pending> forever and the
+# Gateway reports "Programmed: False (AddressNotAssigned)". NodePort fits
+# this lab — and the Gateway then programs with the node addresses.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: proxy-nodeport
+  namespace: three-tier
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        type: NodePort

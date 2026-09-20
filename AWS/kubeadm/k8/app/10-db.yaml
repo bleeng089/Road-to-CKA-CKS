@@ -1,0 +1,77 @@
+# Data tier. A stock nginx that answers with its identity — standing in for a
+# real database so every tier of the lesson speaks plain HTTP.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-conf
+  namespace: three-tier
+data:
+  default.conf: |
+    server {
+      listen 9000;
+      location / {
+        return 200 "[db] pod $hostname - you reached the data tier, end of the chain\n";
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db
+  namespace: three-tier
+  labels:
+    app: db
+    tier: data
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+        tier: data
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 9000
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 9000
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: conf
+              mountPath: /etc/nginx/conf.d
+      volumes:
+        - name: conf
+          configMap:
+            name: db-conf
+---
+# ClusterIP Service (the default type). Note port 80 -> targetPort 9000:
+# clients use the friendly service port; kube-proxy rewrites to the pod port.
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: three-tier
+  labels:
+    app: db
+spec:
+  selector:
+    app: db
+  ports:
+    - name: http
+      port: 80
+      targetPort: 9000

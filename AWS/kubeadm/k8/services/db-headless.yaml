@@ -1,0 +1,18 @@
+# A headless Service (clusterIP: None) over the same db pods. DNS for it
+# returns the pod IPs directly instead of one virtual IP — compare
+# `nslookup db` with `nslookup db-headless` from a test pod.
+apiVersion: v1
+kind: Service
+metadata:
+  name: db-headless
+  namespace: three-tier
+  labels:
+    app: db
+spec:
+  clusterIP: None
+  selector:
+    app: db
+  ports:
+    - name: http
+      port: 80
+      targetPort: 9000

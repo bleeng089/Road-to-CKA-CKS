@@ -1,0 +1,14 @@
+# Selects every pod in the namespace and declares both policyTypes with no
+# allow rules — so all ingress AND all egress is denied. Applying this alone
+# breaks the app completely, including DNS lookups. That is the point:
+# zero-trust starts from nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: three-tier
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress

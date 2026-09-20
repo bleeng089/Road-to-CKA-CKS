@@ -1,0 +1,81 @@
+# Web tier. Answers at "/", proxies "/api/..." to the api Service. The
+# trailing slashes in location + proxy_pass make nginx strip the matched
+# prefix, so /api/db/ arrives at the api tier as /db/ — which the api tier
+# proxies on to db. One curl, two Service hops.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-conf
+  namespace: three-tier
+data:
+  default.conf: |
+    server {
+      listen 8080;
+      location / {
+        return 200 "[frontend] pod $hostname - web tier\n";
+      }
+      location /api/ {
+        proxy_pass http://api.three-tier.svc.cluster.local/;
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: three-tier
+  labels:
+    app: frontend
+    tier: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+        tier: web
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: conf
+              mountPath: /etc/nginx/conf.d
+      volumes:
+        - name: conf
+          configMap:
+            name: frontend-conf
+---
+# Starts life as a plain ClusterIP Service; the NodePort module replaces it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: three-tier
+  labels:
+    app: frontend
+spec:
+  selector:
+    app: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

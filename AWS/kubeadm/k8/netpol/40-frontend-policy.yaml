@@ -1,0 +1,28 @@
+# frontend is the edge of the app: it accepts HTTP on its pod port from ANY
+# source (an ingress rule with no "from" clause means all sources — that is
+# what lets NodePort traffic, ingress controllers, gateways, and test pods
+# in), and may only talk onward to api.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-edge
+  namespace: three-tier
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: api
+      ports:
+        - protocol: TCP
+          port: 9000

@@ -1,0 +1,212 @@
+#cloud-config
+# Control-plane node bootstrap for the kubeadm AWS lab.
+# Rendered by Terraform templatefile(); interpolation placeholders are filled
+# in by Terraform before the instance boots.
+
+hostname: master
+manage_etc_hosts: true
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - apt-transport-https
+  - bash-completion
+  - ca-certificates
+  - conntrack
+  - containerd
+  - curl
+  - gpg
+  - unzip
+
+write_files:
+  - path: /root/calico-installation.yaml
+    permissions: "0600"
+    owner: root:root
+    content: |
+      # Calico Installation custom resource, applied after the Tigera operator.
+      # VXLAN always-on avoids AWS source/destination-check problems and works
+      # in any VPC. NetworkPolicy enforcement is on by default.
+      apiVersion: operator.tigera.io/v1
+      kind: Installation
+      metadata:
+        name: default
+      spec:
+        calicoNetwork:
+          bgp: Disabled
+          ipPools:
+            - name: default-ipv4-ippool
+              blockSize: 26
+              cidr: ${pod_cidr}
+              encapsulation: VXLAN
+              natOutgoing: Enabled
+              nodeSelector: all()
+
+  - path: /opt/k8s-lab/bootstrap.sh
+    permissions: "0755"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      # Control-plane bootstrap: container runtime, kubeadm init, Calico, then
+      # publish the join command and kubeconfig to SSM Parameter Store.
+      set -Eeuo pipefail
+      exec > >(tee -a /var/log/k8s-bootstrap.log) 2>&1
+
+      export DEBIAN_FRONTEND=noninteractive
+      export AWS_DEFAULT_REGION="${aws_region}"
+      PARAM_PREFIX="${param_prefix}"
+      K8S_MINOR="${kubernetes_version}"
+      APT_FLAGS="-y -o DPkg::Lock::Timeout=300"
+
+      echo "=== [$(date -Is)] control-plane bootstrap starting ==="
+
+      # ---- AWS CLI v2 (official installer; handles x86_64 and aarch64) ----
+      if ! command -v aws >/dev/null 2>&1; then
+        curl -fsSLo /tmp/awscliv2.zip "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip"
+        unzip -q /tmp/awscliv2.zip -d /tmp
+        /tmp/aws/install
+        rm -rf /tmp/aws /tmp/awscliv2.zip
+      fi
+
+      fail_handler() {
+        echo "=== [$(date -Is)] bootstrap FAILED - see /var/log/k8s-bootstrap.log ==="
+        aws ssm put-parameter --name "$PARAM_PREFIX/control-plane/status" \
+          --type String --overwrite --value "failed" || true
+      }
+      trap fail_handler ERR
+
+      aws ssm put-parameter --name "$PARAM_PREFIX/control-plane/status" \
+        --type String --overwrite --value "bootstrapping"
+
+      # ---- Instance metadata via IMDSv2 ----
+      TOKEN=$(curl -sfX PUT "http://169.254.169.254/latest/api/token" \
+        -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+      md() { curl -sf -H "X-aws-ec2-metadata-token: $TOKEN" "http://169.254.169.254/latest/meta-data/$1"; }
+      PRIVATE_IP=$(md local-ipv4)
+      PUBLIC_IP=$(md public-ipv4 || true)
+      [ -n "$PUBLIC_IP" ] || PUBLIC_IP="$PRIVATE_IP"
+      echo "private_ip=$PRIVATE_IP public_ip=$PUBLIC_IP"
+
+      # ---- Kernel modules and sysctl required by Kubernetes ----
+      cat > /etc/modules-load.d/k8s.conf <<'EOF'
+      overlay
+      br_netfilter
+      EOF
+      modprobe overlay
+      modprobe br_netfilter
+
+      cat > /etc/sysctl.d/99-kubernetes.conf <<'EOF'
+      net.bridge.bridge-nf-call-iptables  = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.ipv4.ip_forward                 = 1
+      EOF
+      sysctl --system
+
+      # ---- Disable swap (Ubuntu cloud images ship without swap, but be sure) ----
+      swapoff -a
+      sed -ri 's/^([^#].*[[:space:]]swap[[:space:]].*)$/#\1/' /etc/fstab || true
+
+      # ---- containerd with systemd cgroups ----
+      mkdir -p /etc/containerd
+      containerd config default > /etc/containerd/config.toml
+      sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+      sed -i 's|sandbox_image = ".*"|sandbox_image = "registry.k8s.io/pause:3.10"|' /etc/containerd/config.toml
+      systemctl enable containerd
+      systemctl restart containerd
+
+      # ---- crictl talks to containerd ----
+      cat > /etc/crictl.yaml <<'EOF'
+      runtime-endpoint: unix:///run/containerd/containerd.sock
+      image-endpoint: unix:///run/containerd/containerd.sock
+      EOF
+
+      # ---- Kubernetes packages from pkgs.k8s.io ----
+      mkdir -p /etc/apt/keyrings
+      curl -fsSL "https://pkgs.k8s.io/core:/stable:/v$K8S_MINOR/deb/Release.key" \
+        | gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v$K8S_MINOR/deb/ /" \
+        > /etc/apt/sources.list.d/kubernetes.list
+      apt-get $APT_FLAGS update || (sleep 15 && apt-get $APT_FLAGS update)
+      apt-get $APT_FLAGS install kubelet kubeadm kubectl
+      apt-mark hold kubelet kubeadm kubectl containerd
+      systemctl enable kubelet
+
+      # ---- kubeadm init ----
+      KUBEADM_VERSION=$(kubeadm version -o short)
+      cat > /root/kubeadm-config.yaml <<EOF
+      apiVersion: kubeadm.k8s.io/v1beta4
+      kind: InitConfiguration
+      localAPIEndpoint:
+        advertiseAddress: $PRIVATE_IP
+        bindPort: 6443
+      nodeRegistration:
+        name: master
+        criSocket: unix:///run/containerd/containerd.sock
+      ---
+      apiVersion: kubeadm.k8s.io/v1beta4
+      kind: ClusterConfiguration
+      kubernetesVersion: $KUBEADM_VERSION
+      networking:
+        podSubnet: ${pod_cidr}
+        serviceSubnet: ${service_cidr}
+      apiServer:
+        certSANs:
+          - $PRIVATE_IP
+          - $PUBLIC_IP
+      ---
+      apiVersion: kubelet.config.k8s.io/v1beta1
+      kind: KubeletConfiguration
+      cgroupDriver: systemd
+      EOF
+      kubeadm init --config /root/kubeadm-config.yaml
+
+      export KUBECONFIG=/etc/kubernetes/admin.conf
+
+      # ---- kubectl for the ubuntu user (exam-style conveniences included) ----
+      install -d -m 750 -o ubuntu -g ubuntu /home/ubuntu/.kube
+      install -m 600 -o ubuntu -g ubuntu /etc/kubernetes/admin.conf /home/ubuntu/.kube/config
+      cat >> /home/ubuntu/.bashrc <<'EOF'
+
+      # AWS/kubeadm lab conveniences
+      source <(kubectl completion bash)
+      alias k=kubectl
+      complete -o default -F __start_kubectl k
+      EOF
+
+      # ---- Calico CNI via the Tigera operator ----
+      curl -fsSLo /root/tigera-operator.yaml \
+        "https://raw.githubusercontent.com/projectcalico/calico/${calico_version}/manifests/tigera-operator.yaml"
+      applied=0
+      for i in $(seq 1 5); do
+        if kubectl apply --server-side --force-conflicts -f /root/tigera-operator.yaml; then applied=1; break; fi
+        echo "retrying tigera-operator apply (attempt $i)"; sleep 10
+      done
+      [ "$applied" = "1" ]
+
+      applied=0
+      for i in $(seq 1 30); do
+        if kubectl apply -f /root/calico-installation.yaml; then applied=1; break; fi
+        echo "waiting for Calico operator CRDs (attempt $i)"; sleep 10
+      done
+      [ "$applied" = "1" ]
+
+      # ---- Publish the worker join command (SecureString) ----
+      JOIN_CMD=$(kubeadm token create --print-join-command --ttl 24h)
+      aws ssm put-parameter --name "$PARAM_PREFIX/join-command" \
+        --type SecureString --overwrite --value "$JOIN_CMD"
+
+      # ---- Publish a student kubeconfig that targets the PUBLIC IP ----
+      cp /etc/kubernetes/admin.conf /root/student-kubeconfig
+      KUBECONFIG=/root/student-kubeconfig kubectl config set-cluster kubernetes \
+        --server="https://$PUBLIC_IP:6443"
+      aws ssm put-parameter --name "$PARAM_PREFIX/kubeconfig" \
+        --type SecureString --tier Advanced --overwrite \
+        --value "file:///root/student-kubeconfig"
+      rm -f /root/student-kubeconfig
+
+      aws ssm put-parameter --name "$PARAM_PREFIX/control-plane/status" \
+        --type String --overwrite --value "ready"
+      echo "=== [$(date -Is)] control-plane bootstrap complete ==="
+
+runcmd:
+  - [/opt/k8s-lab/bootstrap.sh]
