@@ -6,11 +6,19 @@
 #   macOS / Linux:       cp terraform.tfvars.example terraform.tfvars
 
 # --------------------------------------------------------------------------
-# REQUIRED: your public IP address with a /32 suffix. Only this CIDR may
-# reach the Kubernetes API (and SSH, if enabled). Find your public IP by
-# opening https://checkip.amazonaws.com in a browser.
+# REQUIRED: the one public IP allowed to reach the Kubernetes API (and SSH,
+# if enabled). Must be a single host, /32 — wider ranges are rejected.
+# Find your public IP by opening https://checkip.amazonaws.com in a browser.
 # --------------------------------------------------------------------------
 admin_cidr = "203.0.113.25/32"
+
+# ...or let Terraform look it up for you. Uncomment BOTH lines below (and
+# comment out admin_cidr above) to opt in. Worth it if your IP changes: a
+# stale admin_cidr does not announce itself, it just makes kubectl hang.
+# Every plan re-checks, so a changed IP becomes a visible one-line diff.
+# Requires outbound HTTPS at plan time.
+# admin_cidr             = null
+# auto_detect_admin_cidr = true
 
 # --------------------------------------------------------------------------
 # Common settings (defaults shown; uncomment to change)

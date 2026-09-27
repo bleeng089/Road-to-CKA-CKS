@@ -22,13 +22,23 @@ variable "aws_profile" {
 }
 
 variable "admin_cidr" {
-  description = "CIDR block allowed to reach the Kubernetes API (TCP/6443) and SSH (TCP/22, when enabled). Use your public IP with a /32 suffix, e.g. \"203.0.113.25/32\". Do not use 0.0.0.0/0."
+  description = "Single public IP allowed to reach the Kubernetes API (TCP/6443) and SSH (TCP/22, when enabled), with a /32 suffix, e.g. \"203.0.113.25/32\". Leave unset and use auto_detect_admin_cidr = true to look it up automatically."
   type        = string
+  default     = null
 
+  # A /32 is deliberately the only accepted form. A wider prefix would open the
+  # API server to hosts you did not intend, and that is easy to do by accident
+  # once the value is generated rather than typed.
   validation {
-    condition     = can(cidrhost(var.admin_cidr, 0))
-    error_message = "admin_cidr must be a valid IPv4 CIDR block, e.g. \"203.0.113.25/32\"."
+    condition     = var.admin_cidr == null || (can(cidrhost(var.admin_cidr, 0)) && endswith(coalesce(var.admin_cidr, "/32"), "/32"))
+    error_message = "admin_cidr must be a single host CIDR, e.g. \"203.0.113.25/32\". Wider ranges (including 0.0.0.0/0) are rejected on purpose."
   }
+}
+
+variable "auto_detect_admin_cidr" {
+  description = "Look up this machine's public IP at plan time and use it as admin_cidr. Opt-in: leave false to set admin_cidr by hand. Cannot be combined with admin_cidr."
+  type        = bool
+  default     = false
 }
 
 variable "instance_type" {

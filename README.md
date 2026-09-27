@@ -43,6 +43,11 @@ for the rules kube-proxy and Calico programmed, `conntrack` for the
 connections flowing through them. Modules are self-contained; each opens with
 a Prerequisites block, so you can jump straight to the one you need.
 
+A companion lesson in [`AWS/kubeadm/k8/helm/`](AWS/kubeadm/k8/helm/README.md)
+takes that same app and packages it as a GPG-signed Helm chart — publish it to
+an OCI registry, pull it back, verify the provenance file, and see where chart
+signing stops protecting you. Most of it runs without a cluster.
+
 ## Before you start
 
 - **You need an AWS account you can create VPC/EC2/IAM/SSM resources in**, and

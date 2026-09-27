@@ -41,6 +41,11 @@ from earlier modules is assumed.
 
 Run all `kubectl` commands below from this `k8/` directory.
 
+**Companion lesson:** [`helm/`](helm/README.md) packages this same three-tier
+app as a Helm chart, signs it with GPG, publishes it to an OCI registry, and
+verifies the signature on the way back down. Independent of the modules below
+— most of it runs with no cluster at all.
+
 ---
 
 ## Module 1 — Pod networking: every pod gets a real IP
@@ -755,6 +760,10 @@ Envoy Gateway delete can take a minute — it tears down CRDs.)
 
 ## Where to go next
 
+- **[`helm/`](helm/README.md)** — the same app as a signed Helm chart:
+  `helm package --sign`, push to an OCI registry, `helm pull --verify`, and
+  what a `.prov` file does and does not prove. The supply-chain half of CKS,
+  where this lesson is the networking half.
 - Add `spec.tls` to the Ingress with a self-signed cert and terminate HTTPS.
 - Convert the frontend policy to only accept traffic from the ingress
   controller's namespace (`namespaceSelector`) instead of any source.

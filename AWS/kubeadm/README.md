@@ -34,6 +34,7 @@ AWS/kubeadm/k8/     hands-on networking lessons to run on the built cluster
    |               status / join-command / kubeconfig                   |
    +--------------------------------------------------------------------+
 ```
+![infra-graph](graph-dot.svg)
 
 **What gets installed on the nodes:** containerd (systemd cgroups), kubeadm /
 kubelet / kubectl from `pkgs.k8s.io` (v1.33 by default), Calico (v3.30.2 by
@@ -111,7 +112,38 @@ Windows cmd:         copy terraform.tfvars.example terraform.tfvars
 macOS / Linux:       cp terraform.tfvars.example terraform.tfvars
 ```
 
-Then edit `terraform.tfvars` and set `admin_cidr` to **your public IP** with
+One value is required: the single public IP allowed to reach the API server
+(and SSH, if you enable it). Set it automatically as below, or by hand in the
+next subsection.
+
+If your IP changes — home ISP, VPN, tethering — a stale `admin_cidr` does not
+announce itself. The security group simply drops your packets and `kubectl`
+hangs with no error. To have Terraform look the IP up on every plan instead,
+comment out `admin_cidr` and set:
+
+```hcl
+auto_detect_admin_cidr = true
+```
+
+Terraform then fetches <https://checkip.amazonaws.com> at plan time and uses
+that address with a `/32`. A changed IP becomes a visible one-line diff:
+
+```text
+~ cidr_ipv4 = "198.51.100.7/32" -> "203.0.113.25/32"
+Plan: 0 to add, 2 to change, 0 to destroy.
+```
+
+Set one or the other, not both — Terraform stops with an error if you set
+`admin_cidr` while auto-detection is on, rather than silently picking a
+winner. The lookup is checked before it is used: a non-200 response or
+anything that is not a bare IPv4 address fails the plan instead of becoming a
+security-group rule. This adds the `hashicorp/http` provider (so re-run
+`terraform init`) and requires outbound HTTPS at plan time, which is why it is
+opt-in rather than the default.
+
+### Optional: Manually find your IP
+
+Instead of auto-detection, edit `terraform.tfvars` and set `admin_cidr` to **your public IP** with
 `/32`. Find your public IP by opening <https://checkip.amazonaws.com> in a
 browser, or:
 
@@ -123,7 +155,8 @@ macOS / Linux:       curl https://checkip.amazonaws.com
 
 Example: if your IP is `198.51.100.7`, set `admin_cidr = "198.51.100.7/32"`.
 Only this CIDR can reach the Kubernetes API (and SSH, if you enable it) —
-nothing is exposed to `0.0.0.0/0`.
+nothing is exposed to `0.0.0.0/0`. A `/32` is the only accepted form; wider
+prefixes are rejected, so a slip cannot quietly widen who can reach the API.
 
 ## 4. Deploy
 
@@ -237,6 +270,12 @@ them:
 
 Modules are self-contained — each opens with a Prerequisites block, so you
 can jump straight to the one you need.
+
+Alongside them, **[`k8/helm/README.md`](k8/helm/README.md)** takes the same
+three-tier app and packages it as a GPG-signed Helm chart: `helm package
+--sign`, push to an OCI registry, `helm pull --verify`, and a read of what a
+provenance file actually binds. It needs no cluster until the install step, so
+it is the one lesson here you can work through with everything destroyed.
 
 **Want a 60-second proof that Calico enforces NetworkPolicy** before starting
 the lessons? Module 8 is the full treatment, but this is the short version:
@@ -362,10 +401,21 @@ sudo crictl images
   `sudo kubeadm reset -f`, then re-run the bootstrap script.
 
 **kubectl from your computer times out.** Your public IP probably changed
-(home ISPs rotate them, VPNs change them). Update `admin_cidr` in
-`terraform.tfvars` and run `terraform apply` — only the security-group rule
-changes. Corporate networks that block outbound port 6443 cause the same
-symptom.
+(home ISPs rotate them, VPNs change them). The tell is that it *hangs* rather
+than erroring — a dropped packet, not a refused connection. Confirm with the
+same lookup from step 3, compare it to the rule that is live:
+
+```text
+aws ec2 describe-security-groups --group-ids <security_group_id> \
+  --query "SecurityGroups[0].IpPermissions[?IpRanges[0]].{Port:FromPort,Cidr:IpRanges[0].CidrIp}" \
+  --output table
+```
+
+then update `admin_cidr` in `terraform.tfvars` and run `terraform apply` —
+only the security-group rules change, nothing is rebuilt, and the kubeconfig
+you already downloaded keeps working. To stop hitting this, turn on
+`auto_detect_admin_cidr` (step 3). Corporate networks that block outbound port
+6443 cause the same symptom.
 
 **A NodePort/Ingress port times out from your computer.** Expected: the
 security group opens only 6443 (and 22 if SSH is enabled). NodePorts are
@@ -446,7 +496,8 @@ points at no longer exists.
 | `project_name` | `kubeadm-lab` | Resource-name and SSM-path prefix; unique per account |
 | `aws_region` | `us-east-1` | Deployment region |
 | `aws_profile` | `""` | Optional named CLI profile |
-| `admin_cidr` | — (required) | Your IP/32; only source allowed to API + SSH |
+| `admin_cidr` | — (required unless auto-detecting) | Your IP as a `/32`; only source allowed to API + SSH. Wider prefixes rejected |
+| `auto_detect_admin_cidr` | `false` | Look up your public IP at plan time instead of setting `admin_cidr` |
 | `instance_type` | `t3.medium` | Both nodes' instance type (x86_64) |
 | `root_volume_size_gb` | `30` | Encrypted gp3 root volume size |
 | `ubuntu_release` | `24.04` | `22.04` or `24.04` |

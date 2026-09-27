@@ -23,7 +23,7 @@ resource "aws_vpc_security_group_ingress_rule" "intra_cluster" {
 
 resource "aws_vpc_security_group_ingress_rule" "kubernetes_api" {
   security_group_id = aws_security_group.cluster.id
-  cidr_ipv4         = var.admin_cidr
+  cidr_ipv4         = local.admin_cidr
   from_port         = 6443
   to_port           = 6443
   ip_protocol       = "tcp"
@@ -32,13 +32,28 @@ resource "aws_vpc_security_group_ingress_rule" "kubernetes_api" {
   tags = {
     Name = "${var.project_name}-api"
   }
+
+  # Both admin rules carry the same preconditions: without them, an unset
+  # admin_cidr surfaces as a bare "Missing Attribute Configuration" from the
+  # provider instead of something a reader can act on. See admin-cidr.tf.
+  lifecycle {
+    precondition {
+      condition     = !(var.auto_detect_admin_cidr && var.admin_cidr != null)
+      error_message = "Set either admin_cidr or auto_detect_admin_cidr = true, not both. Comment out admin_cidr in terraform.tfvars to use auto-detection."
+    }
+
+    precondition {
+      condition     = local.admin_cidr != null
+      error_message = "No administrator CIDR configured. Set admin_cidr = \"<your.public.ip>/32\" in terraform.tfvars, or set auto_detect_admin_cidr = true to look it up."
+    }
+  }
 }
 
 resource "aws_vpc_security_group_ingress_rule" "ssh" {
   count = var.ssh_enabled ? 1 : 0
 
   security_group_id = aws_security_group.cluster.id
-  cidr_ipv4         = var.admin_cidr
+  cidr_ipv4         = local.admin_cidr
   from_port         = 22
   to_port           = 22
   ip_protocol       = "tcp"
@@ -46,6 +61,18 @@ resource "aws_vpc_security_group_ingress_rule" "ssh" {
 
   tags = {
     Name = "${var.project_name}-ssh"
+  }
+
+  lifecycle {
+    precondition {
+      condition     = !(var.auto_detect_admin_cidr && var.admin_cidr != null)
+      error_message = "Set either admin_cidr or auto_detect_admin_cidr = true, not both. Comment out admin_cidr in terraform.tfvars to use auto-detection."
+    }
+
+    precondition {
+      condition     = local.admin_cidr != null
+      error_message = "No administrator CIDR configured. Set admin_cidr = \"<your.public.ip>/32\" in terraform.tfvars, or set auto_detect_admin_cidr = true to look it up."
+    }
   }
 }
 
