@@ -1,0 +1,141 @@
+{{- if .Values.rabbitmq.enabled }}
+{{- $ctx := dict "root" . "component" "rabbitmq" }}
+{{- $mq := .Values.rabbitmq }}
+# Single-node RabbitMQ (official image) with the built-in Prometheus plugin.
+# Durable exchange + queue, persistent messages, publisher confirms: a
+# message the broker has confirmed survives a broker restart. Not clustered.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-rabbitmq
+  labels:
+    {{- include "webshop.labels" $ctx | nindent 4 }}
+data:
+  enabled_plugins: |
+    [rabbitmq_prometheus].
+  10-webshop.conf: |
+    # Leave headroom under the container memory limit.
+    vm_memory_high_watermark.relative = 0.6
+    disk_free_limit.absolute = 256MB
+    # Aggregated metrics on /metrics; per-queue detail is requested by
+    # Prometheus from /metrics/detailed.
+    prometheus.return_per_object_metrics = false
+    log.console.level = warning
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-rabbitmq
+  labels:
+    {{- include "webshop.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "webshop.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - {name: amqp, port: 5672, targetPort: amqp}
+    - {name: prometheus, port: 15692, targetPort: prometheus}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-rabbitmq-headless
+  labels:
+    {{- include "webshop.labels" $ctx | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "webshop.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - {name: amqp, port: 5672}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-rabbitmq
+  labels:
+    {{- include "webshop.labels" $ctx | nindent 4 }}
+spec:
+  serviceName: {{ .Release.Name }}-rabbitmq-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "webshop.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "webshop.labels" $ctx | nindent 8 }}
+      annotations:
+        checksum/config: {{ toYaml $mq | sha256sum | trunc 12 }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        {{- include "webshop.podSecurity" . | nindent 8 }}
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        # don't re-walk the whole volume on every mount once it is ours
+        fsGroupChangePolicy: OnRootMismatch
+      terminationGracePeriodSeconds: 60
+      {{- include "webshop.scheduling" . | nindent 6 }}
+      initContainers:
+        # RabbitMQ refuses an Erlang cookie that is not owner-only, and the
+        # kubelet's fsGroup handling can make files on a kept volume group-
+        # readable when it mounts it again. Found in the lab: after an
+        # uninstall/reinstall the broker crash-looped on its own cookie.
+        - name: cookie-permissions
+          image: {{ $mq.image }}
+          command: [sh, -c, 'if [ -f /var/lib/rabbitmq/.erlang.cookie ]; then chmod 0400 /var/lib/rabbitmq/.erlang.cookie; fi']
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 32Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/rabbitmq}
+      containers:
+        - name: rabbitmq
+          image: {{ $mq.image }}
+          ports:
+            - {name: amqp, containerPort: 5672}
+            - {name: prometheus, containerPort: 15692}
+          env:
+            - {name: RABBITMQ_DEFAULT_USER, value: {{ $mq.username | quote }}}
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom: {secretKeyRef: {name: {{ include "webshop.amqpSecret" . }}, key: password}}
+            # stable node name, so the data directory matches across restarts
+            - {name: RABBITMQ_NODENAME, value: rabbit@localhost}
+          readinessProbe:
+            tcpSocket: {port: amqp}
+            periodSeconds: 5
+          livenessProbe:
+            exec: {command: [rabbitmq-diagnostics, -q, ping]}
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 15
+          resources:
+            {{- toYaml $mq.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/rabbitmq}
+            - {name: config, mountPath: /etc/rabbitmq/enabled_plugins, subPath: enabled_plugins}
+            - {name: config, mountPath: /etc/rabbitmq/conf.d/10-webshop.conf, subPath: 10-webshop.conf}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-rabbitmq
+        {{- if eq .Values.storage.mode "ephemeral" }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+  {{- if ne .Values.storage.mode "ephemeral" }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        {{- include "webshop.pvcSpec" (dict "root" . "size" $mq.persistence.size) | nindent 8 }}
+  {{- end }}
+{{- end }}

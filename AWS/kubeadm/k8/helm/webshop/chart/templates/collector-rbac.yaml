@@ -1,0 +1,36 @@
+{{- if .Values.collector.enabled }}
+# Least privilege for the Collector: read pods/replicasets (k8sattributes
+# enrichment) and watch events (k8sobjects) in this namespace only. The
+# Collector config filters to the same namespace, so no ClusterRole is needed.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-collector
+  labels:
+    {{- include "webshop.labels" (dict "root" . "component" "collector") | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: [events.k8s.io]
+    resources: [events]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-collector
+  labels:
+    {{- include "webshop.labels" (dict "root" . "component" "collector") | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-collector
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.collector.serviceAccount.name | default (printf "%s-collector" .Release.Name) }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

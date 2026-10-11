@@ -1,0 +1,59 @@
+{{- /*
+Optional ways in besides port-forwarding, for a controller you already run
+(the networking lessons install ingress-nginx in Module 6 and Envoy Gateway
+in Module 7, then remove them in Module 9). Only the storefront and Grafana
+are ever exposed; lab-control stays internal. Also list the controller's
+namespace in networkPolicy.ingressControllerNamespaces.
+*/ -}}
+{{- $e := .Values.exposure }}
+{{- if $e.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "webshop.labels" (dict "root" . "component" "exposure") | nindent 4 }}
+spec:
+  ingressClassName: {{ $e.ingress.className }}
+  rules:
+    - host: {{ $e.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-storefront
+                port: {name: http}
+    {{- if $e.ingress.grafanaHost }}
+    - host: {{ $e.ingress.grafanaHost }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-grafana
+                port: {number: 80}
+    {{- end }}
+{{- end }}
+{{- if $e.httpRoute.enabled }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}-storefront
+  labels:
+    {{- include "webshop.labels" (dict "root" . "component" "exposure") | nindent 4 }}
+spec:
+  parentRefs:
+    {{- required "exposure.httpRoute.parentRefs must name your Gateway" $e.httpRoute.parentRefs | toYaml | nindent 4 }}
+  hostnames:
+    {{- toYaml $e.httpRoute.hostnames | nindent 4 }}
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /}
+      backendRefs:
+        - name: {{ .Release.Name }}-storefront
+          port: 80
+{{- end }}

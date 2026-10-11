@@ -1,0 +1,115 @@
+{{- if .Values.postgresql.enabled }}
+{{- $ctx := dict "root" . "component" "postgresql" }}
+{{- $pg := .Values.postgresql }}
+# Single-instance PostgreSQL (official image) for the self-contained lab
+# profile. Durable state lives here and in RabbitMQ - never in app pods.
+# Not highly available: one pod, one volume. For anything beyond the lab, use
+# a managed or operator-run database (postgresql.enabled=false + external.*).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-postgresql
+  labels:
+    {{- include "webshop.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "webshop.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - {name: postgresql, port: 5432, targetPort: postgresql}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-postgresql
+  labels:
+    {{- include "webshop.labels" $ctx | nindent 4 }}
+spec:
+  serviceName: {{ .Release.Name }}-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "webshop.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "webshop.labels" $ctx | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        {{- include "webshop.podSecurity" . | nindent 8 }}
+        # The image's postgres user. fsGroup makes the volume group-writable,
+        # and PGDATA is a subdirectory initdb creates (and so owns).
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      terminationGracePeriodSeconds: 60
+      {{- include "webshop.scheduling" . | nindent 6 }}
+      containers:
+        - name: postgresql
+          image: {{ $pg.image }}
+          args:
+            - -c
+            - max_connections={{ $pg.maxConnections }}
+            - -c
+            - shared_buffers=48MB
+            - -c
+            - log_min_duration_statement=1000
+          ports:
+            - {name: postgresql, containerPort: 5432}
+          env:
+            - {name: POSTGRES_DB, value: {{ $pg.database | quote }}}
+            - {name: POSTGRES_USER, value: {{ $pg.username | quote }}}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ include "webshop.pgSecret" . }}, key: password}}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          readinessProbe:
+            exec: {command: [sh, -c, 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1']}
+            periodSeconds: 5
+          livenessProbe:
+            exec: {command: [sh, -c, 'pg_isready -U "$POSTGRES_USER" -h 127.0.0.1']}
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml $pg.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+            - {name: run, mountPath: /var/run/postgresql}
+        {{- if $pg.exporter.enabled }}
+        # Server-side view of the database for Prometheus: connections by
+        # state (pg_stat_activity), transactions, locks, settings.
+        - name: exporter
+          image: {{ $pg.exporter.image }}
+          ports:
+            - {name: metrics, containerPort: 9187}
+          env:
+            - {name: DATA_SOURCE_URI, value: "127.0.0.1:5432/{{ $pg.database }}?sslmode=disable"}
+            - {name: DATA_SOURCE_USER, value: {{ $pg.username | quote }}}
+            - name: DATA_SOURCE_PASS
+              valueFrom: {secretKeyRef: {name: {{ include "webshop.pgSecret" . }}, key: password}}
+          readinessProbe:
+            httpGet: {path: /, port: metrics}
+          resources:
+            {{- toYaml $pg.exporter.resources | nindent 12 }}
+          securityContext:
+            {{- include "webshop.containerSecurity" . | nindent 12 }}
+        {{- end }}
+      volumes:
+        - name: run
+          emptyDir: {}
+        {{- if eq .Values.storage.mode "ephemeral" }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+  {{- if ne .Values.storage.mode "ephemeral" }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        {{- include "webshop.pvcSpec" (dict "root" . "size" $pg.persistence.size) | nindent 8 }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,20 @@
+{{- if .Values.prometheus.config }}
+# Mounted by the prometheus subchart (server.configMapOverrideName:
+# prometheus-config) at /etc/config; its config-reloader sidecar reloads
+# Prometheus when this changes.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-prometheus-config
+  labels:
+    {{- include "webshop-observability.labels" . | nindent 4 }}
+data:
+  prometheus.yml: |
+    {{- tpl (.Files.Get "prometheus/prometheus.yml") . | nindent 4 }}
+  webshop-alerts.yml: |
+    {{- if .Values.alerts.enabled }}
+    {{- tpl (.Files.Get "prometheus/webshop-alerts.yml") . | nindent 4 }}
+    {{- else }}
+    groups: []
+    {{- end }}
+{{- end }}

@@ -1,0 +1,248 @@
+# Recording and alerting rules. Helm-templated: the SLO target and burn-rate
+# windows come from values. Prometheus' own annotation templates ($labels,
+# $value) are wrapped in Helm raw strings (backticks) so Helm leaves them alone.
+{{- $slo := .Values.alerts.sloTarget }}
+{{- $budget := subf 1.0 $slo }}
+{{- $burn := .Values.alerts.fastBurn }}
+{{- $threshold := mulf $burn.factor $budget }}
+groups:
+  # ------------------------------------------------------------------ SLI
+  - name: webshop-sli
+    rules:
+      {{- range $w := list "1m" "2m" "5m" "10m" "30m" "1h" }}
+      - record: webshop:journeys:rate{{ $w }}
+        expr: sum(rate(webshop_synthetic_journeys_total[{{ $w }}]))
+      - record: webshop:journeys_bad:ratio_rate{{ $w }}
+        expr: |
+          sum(rate(webshop_synthetic_journeys_total{webshop_outcome="bad"}[{{ $w }}]))
+            / sum(rate(webshop_synthetic_journeys_total[{{ $w }}]))
+      {{- end }}
+
+  # ------------------------------------------------------ user reliability
+  - name: webshop-user-reliability
+    rules:
+      # Multi-window burn rate: both windows must burn faster than
+      # factor x the error budget, so a short blip does not page and a real
+      # burn is caught within minutes. SLO {{ $slo }} -> budget {{ $budget }}.
+      - alert: WebshopJourneySLOBurnRateHigh
+        expr: |
+          webshop:journeys_bad:ratio_rate{{ $burn.long }} > {{ $threshold }}
+          and webshop:journeys_bad:ratio_rate{{ $burn.short }} > {{ $threshold }}
+        for: 1m
+        labels: {severity: page, category: user}
+        annotations:
+          summary: Synthetic journeys are failing {{ $burn.factor }}x faster than the {{ mulf $slo 100 }}% SLO allows
+          description: {{`'{{ $value | humanizePercentage }} of eligible journeys were bad over the short window. Open the "Webshop / User reliability" dashboard and break the bad journeys down by reason.'`}}
+
+      - alert: WebshopDuplicateCharge
+        expr: |
+          sum(increase(webshop_synthetic_journeys_total{webshop_reason="duplicate_charge"}[10m]))
+          + sum(increase(webshop_synthetic_payment_audits_total{webshop_audit_result=~"duplicate_charge|late_duplicate_charge|charged_after_error"}[10m]) or vector(0))
+          > 0
+        labels: {severity: page, category: user}
+        annotations:
+          summary: A customer was charged more than once, or charged for an order they saw fail
+          description: The payment simulator's ledger shows more successful captures than orders. Every one of these is a refund.
+
+      - alert: WebshopWrongItemShipped
+        expr: sum(increase(webshop_synthetic_journeys_total{webshop_reason="wrong_item"}[10m])) > 0
+        labels: {severity: page, category: user}
+        annotations:
+          summary: Orders were fulfilled with a different variant than requested
+          description: HTTP and fulfilment status were successful; only the independent check of what shipped caught it.
+
+      - alert: WebshopFulfilmentDeadlineMisses
+        expr: |
+          sum(rate(webshop_synthetic_journeys_total{webshop_reason="deadline_exceeded"}[5m]))
+            / sum(rate(webshop_synthetic_journeys_total[5m])) > 0.05
+        for: 2m
+        labels: {severity: ticket, category: user}
+        annotations:
+          summary: More than 5% of orders are not fulfilled within the deadline
+
+      - alert: WebshopValidationCheckUnexpected
+        expr: sum(increase(webshop_synthetic_checks_total{webshop_check_result="unexpected"}[10m])) > 0
+        labels: {severity: ticket, category: user}
+        annotations:
+          summary: An invalid order (declined card or bad quantity) was not rejected as expected
+
+  # ---------------------------------------------------------- service health
+  - name: webshop-service-health
+    rules:
+      - alert: WebshopHighErrorRatio
+        expr: |
+          sum by (service_name) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
+            / sum by (service_name) (rate(http_server_request_duration_seconds_count[5m])) > 0.05
+        for: 5m
+        labels: {severity: ticket, category: service}
+        annotations:
+          summary: {{`'{{ $labels.service_name }}: {{ $value | humanizePercentage }} of requests fail with 5xx'`}}
+
+      - alert: WebshopHighLatency
+        expr: |
+          histogram_quantile(0.95, sum by (service_name, http_route, le) (rate(http_server_request_duration_seconds_bucket[5m]))) > 1
+        for: 5m
+        labels: {severity: ticket, category: service}
+        annotations:
+          summary: {{`'{{ $labels.service_name }} {{ $labels.http_route }}: p95 latency {{ $value | humanizeDuration }}'`}}
+
+      - alert: WebshopDatabasePoolSaturated
+        expr: max by (service_name, db_client_connection_pool_name) (db_client_connection_pending_requests) > 0
+        for: 2m
+        labels: {severity: ticket, category: service}
+        annotations:
+          summary: {{`'{{ $labels.db_client_connection_pool_name }}: callers are queueing for database connections'`}}
+
+  # ------------------------------------------------------------ async path
+  - name: webshop-async
+    rules:
+      - alert: WebshopQueueBacklogGrowing
+        expr: |
+          sum by (queue) (rabbitmq_detailed_queue_messages_ready) > 20
+          and sum by (queue) (deriv(rabbitmq_detailed_queue_messages_ready[5m])) > 0
+        for: 3m
+        labels: {severity: ticket, category: async}
+        annotations:
+          summary: {{`'Queue {{ $labels.queue }} is growing: {{ $value }} messages ready'`}}
+
+      - alert: WebshopQueueOldestMessageOld
+        expr: |
+          (time() - max by (queue) (rabbitmq_detailed_queue_head_message_timestamp > 0)) > 30
+          and max by (queue) (rabbitmq_detailed_queue_messages_ready) > 0
+        for: 2m
+        labels: {severity: ticket, category: async}
+        annotations:
+          summary: {{`'The oldest message in {{ $labels.queue }} has waited {{ $value | humanizeDuration }}'`}}
+
+      - alert: WebshopOutboxStuck
+        expr: max(webshop_outbox_oldest_age_seconds) > 30
+        for: 2m
+        labels: {severity: ticket, category: async}
+        annotations:
+          summary: Accepted orders are not reaching the broker (outbox not draining)
+
+  # --------------------------------------------------------------- telemetry
+  - name: webshop-telemetry
+    rules:
+      - alert: TelemetryCollectorDown
+        expr: up{job="otel-collector"} == 0 or absent(up{job="otel-collector"})
+        for: 2m
+        labels: {severity: page, category: telemetry}
+        annotations:
+          summary: The OpenTelemetry Collector is not being scraped; all three signals are probably lost
+
+      - alert: TelemetryExportFailing
+        expr: |
+          sum by (exporter) (
+              rate(otelcol_exporter_send_failed_spans_total[5m])
+            or rate(otelcol_exporter_send_failed_log_records_total[5m])
+            or rate(otelcol_exporter_send_failed_metric_points_total[5m])
+          ) > 0
+        for: 5m
+        labels: {severity: ticket, category: telemetry}
+        annotations:
+          summary: {{`'Collector exporter {{ $labels.exporter }} is failing to deliver data'`}}
+
+      - alert: TelemetryRefusedByCollector
+        expr: |
+          sum by (receiver) (
+              rate(otelcol_receiver_refused_spans_total[5m])
+            or rate(otelcol_receiver_refused_log_records_total[5m])
+            or rate(otelcol_receiver_refused_metric_points_total[5m])
+          ) > 0
+        for: 5m
+        labels: {severity: ticket, category: telemetry}
+        annotations:
+          summary: The Collector is refusing incoming data (usually memory_limiter back-pressure)
+
+      - alert: TelemetryExportQueueFilling
+        expr: max by (exporter) (otelcol_exporter_queue_size / otelcol_exporter_queue_capacity) > 0.8
+        for: 5m
+        labels: {severity: ticket, category: telemetry}
+        annotations:
+          summary: {{`'Collector queue for {{ $labels.exporter }} is {{ $value | humanizePercentage }} full'`}}
+
+      - alert: TelemetryDroppedInApplication
+        expr: |
+          sum by (service_name) (
+              rate(otel_sdk_processor_span_processed_total{error_type!=""}[5m])
+            or rate(otel_sdk_processor_log_processed_total{error_type!=""}[5m])
+            or rate(otel_sdk_exporter_span_exported_total{error_type!=""}[5m])
+            or rate(otel_sdk_exporter_log_exported_total{error_type!=""}[5m])
+          ) > 0
+        for: 5m
+        labels: {severity: ticket, category: telemetry}
+        annotations:
+          summary: {{`'{{ $labels.service_name }}: the SDK is dropping or failing to export telemetry'`}}
+
+      - alert: TelemetryBackendDiscarding
+        expr: |
+          sum(rate(loki_discarded_samples_total[5m])) > 0
+          or sum(rate(tempo_discarded_spans_total[5m])) > 0
+        for: 5m
+        labels: {severity: ticket, category: telemetry}
+        annotations:
+          summary: Loki or Tempo is rejecting data it received
+
+      - alert: SyntheticTrafficMissing
+        expr: sum(rate(webshop_synthetic_journeys_total[5m])) == 0 or absent(webshop_synthetic_journeys_total)
+        for: 5m
+        labels: {severity: ticket, category: telemetry}
+        annotations:
+          summary: No synthetic journeys are being evaluated - the SLI is blind (load generator down, or its metrics are lost)
+
+      - alert: ScrapeTargetDown
+        expr: up{job=~"webshop-otlp|kube-state-metrics|postgresql|rabbitmq|loki|tempo"} == 0
+        for: 3m
+        labels: {severity: ticket, category: telemetry}
+        annotations:
+          summary: {{`'Prometheus cannot scrape {{ $labels.job }} on {{ $labels.pod }}'`}}
+
+  # ----------------------------------------------------------- Kubernetes
+  # Every container in the namespace, the lab's own backends included. Both
+  # were needed in the lab: Tempo and Grafana were OOM-killed at their memory
+  # limits, and Kubernetes recorded Grafana's kill as reason "Error", exit
+  # code 137 - not "OOMKilled". So alert on the restart and on memory close
+  # to the limit, not on the termination reason.
+  - name: webshop-kubernetes
+    rules:
+      - alert: ContainerRestarted
+        expr: increase(kube_pod_container_status_restarts_total{namespace="{{ .Release.Namespace }}"}[15m]) > 0
+        labels: {severity: ticket, category: kubernetes}
+        annotations:
+          summary: {{`'{{ $labels.pod }} / {{ $labels.container }} restarted'`}}
+          description: >-
+            Why it ended: kube_pod_container_status_last_terminated_reason and
+            kube_pod_container_status_last_terminated_exitcode (137 = SIGKILL:
+            memory limit or failed liveness probe), and the pod's events in Loki
+            (service_name="kubernetes-events").
+
+      - alert: ContainerNearMemoryLimit
+        expr: |
+          max by (pod, container) (container_memory_working_set_bytes{namespace="{{ .Release.Namespace }}", container!=""})
+            / on (pod, container)
+          max by (pod, container) (kube_pod_container_resource_limits{namespace="{{ .Release.Namespace }}", resource="memory"})
+            > 0.9
+        for: 10m
+        labels: {severity: ticket, category: kubernetes}
+        annotations:
+          summary: {{`'{{ $labels.pod }} / {{ $labels.container }} is at {{ $value | humanizePercentage }} of its memory limit'`}}
+
+      # Only containers that run in at least one CFS period a second: a mostly
+      # idle container that bursts (the PostgreSQL exporter on the AWS lab is
+      # runnable in ~0.3 periods a second and throttled in a third of them)
+      # loses almost nothing, but its ratio looks alarming.
+      - alert: ContainerCPUThrottled
+        expr: |
+          (
+            sum by (pod, container) (rate(container_cpu_cfs_throttled_periods_total{namespace="{{ .Release.Namespace }}", container!=""}[5m]))
+              /
+            sum by (pod, container) (rate(container_cpu_cfs_periods_total{namespace="{{ .Release.Namespace }}", container!=""}[5m]))
+              > 0.25
+          )
+          and on (pod, container)
+          sum by (pod, container) (rate(container_cpu_cfs_periods_total{namespace="{{ .Release.Namespace }}", container!=""}[5m])) > 1
+        for: 10m
+        labels: {severity: ticket, category: kubernetes}
+        annotations:
+          summary: {{`'{{ $labels.pod }} / {{ $labels.container }} is CPU-throttled in {{ $value | humanizePercentage }} of scheduling periods'`}}

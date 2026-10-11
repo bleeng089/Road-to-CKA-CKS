@@ -1,0 +1,49 @@
+{{- if .Values.synthetic.enabled }}
+# `helm test <release> -n <namespace>`: one synthetic journey, judged by the
+# same SLI rules as the load generator. Passes only if the order is
+# fulfilled with the requested item, charged exactly once, within the deadline.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Release.Name }}-journey-test
+  labels:
+    {{- include "webshop.labels" (dict "root" . "component" "journey-test") | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  securityContext:
+    {{- include "webshop.podSecurity" . | nindent 4 }}
+    runAsUser: 10001
+  {{- include "webshop.scheduling" . | nindent 2 }}
+  {{- include "webshop.dnsConfig" . | nindent 2 }}
+  containers:
+    - name: journey
+      image: {{ include "webshop.image" . }}
+      args: [journey]
+      envFrom:
+        - configMapRef:
+            name: {{ .Release.Name }}-config
+      env:
+        - name: POD_NAME
+          valueFrom: {fieldRef: {fieldPath: metadata.name}}
+        - {name: WEBSHOP_INSTANCE_ID, value: $(POD_NAME)}
+        - {name: LABCONTROL_URL, value: ""}
+      resources:
+        requests: {cpu: 20m, memory: 96Mi}
+        limits: {cpu: 300m, memory: 192Mi}
+      securityContext:
+        {{- include "webshop.containerSecurity" . | nindent 8 }}
+      volumeMounts:
+        - {name: tmp, mountPath: /tmp}
+  volumes:
+    - name: tmp
+      emptyDir: {sizeLimit: 16Mi}
+{{- end }}

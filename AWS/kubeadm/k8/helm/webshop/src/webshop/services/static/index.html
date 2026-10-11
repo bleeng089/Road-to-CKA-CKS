@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Webshop lab</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>Webshop <span class="tag">observability lab</span></h1>
+    <form id="lookup" class="lookup">
+      <input id="lookup-id" placeholder="Order ID (ord-...)" aria-label="Order ID">
+      <button type="submit">Track</button>
+    </form>
+  </header>
+
+  <main>
+    <section aria-labelledby="catalog-title">
+      <h2 id="catalog-title">Catalog</h2>
+      <div id="catalog" class="grid"><p class="muted">Loading catalog…</p></div>
+    </section>
+
+    <section aria-labelledby="checkout-title" class="panel">
+      <h2 id="checkout-title">Checkout</h2>
+      <form id="checkout">
+        <p id="selection" class="muted">Choose a product and a color.</p>
+        <label>Quantity <input id="quantity" type="number" min="1" max="5" value="1"></label>
+        <label>Email <input id="email" type="email" value="shopper@example.com" required></label>
+        <label>Card number
+          <input id="card" value="4242424242424242" inputmode="numeric" required>
+        </label>
+        <p class="hint">Test cards: 4242 4242 4242 4242 is approved, 4000 0000 0000 0002 is declined.</p>
+        <button id="place" type="submit" disabled>Place order</button>
+        <p id="checkout-result" role="status"></p>
+      </form>
+    </section>
+
+    <section aria-labelledby="order-title" class="panel" id="order-panel" hidden>
+      <h2 id="order-title">Order <code id="order-id"></code></h2>
+      <p><span id="order-status" class="badge"></span> <span id="order-explain" class="muted"></span></p>
+      <table class="kv">
+        <tr><th>You ordered</th><td id="order-requested"></td></tr>
+        <tr><th>We shipped</th><td id="order-shipped">—</td></tr>
+        <tr><th>Total</th><td id="order-total"></td></tr>
+      </table>
+      <ol id="order-events" class="events"></ol>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

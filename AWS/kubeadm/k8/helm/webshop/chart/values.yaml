@@ -1,0 +1,481 @@
+# Default values for the webshop chart.
+#
+# These defaults are cluster-neutral. The tested profile for the AWS kubeadm
+# lab is ../values/values-aws.yaml; connecting to databases and telemetry
+# backends you already run is ../values/values-existing-backends.yaml.
+#
+# Everything is named after the release (<release>-checkout, ...) and lives
+# in the release namespace (`helm install -n <namespace>`); service URLs are
+# built from both, so a different release name or namespace just works.
+
+global:
+  webshop:
+    # deployment.environment.name on every signal, and an external label
+    environment: lab
+    # k8s.cluster.name on every signal, and Prometheus' "cluster" label
+    clusterName: kubernetes
+
+# ---------------------------------------------------------------- the image
+# One image runs every component (python -m webshop <component>). Build it,
+# push it to a registry the nodes can pull from, and point this at it - see
+# the README, "Build and publish the image".
+image:
+  registry: docker.io
+  repository: CHANGE-ME/webshop
+  tag: "0.1.0"
+  # Optional: pin by digest (sha256:...). Takes precedence over the tag.
+  digest: ""
+  pullPolicy: IfNotPresent
+# e.g. [{name: regcred}] for a private registry
+imagePullSecrets: []
+
+# ------------------------------------------------------------- components
+# requests drive scheduling and the HPA (utilisation is relative to the CPU
+# request); limits are where throttling and OOM kills happen. Sized for a
+# 2 vCPU / 4 GiB worker - see the README's capacity budget.
+components:
+  storefront:
+    replicas: 1
+    resources:
+      requests: {cpu: 50m, memory: 96Mi}
+      limits: {cpu: 300m, memory: 192Mi}
+    autoscaling: {enabled: true, minReplicas: 1, maxReplicas: 2, targetCPUUtilizationPercentage: 70}
+  checkout:
+    replicas: 2
+    resources:
+      requests: {cpu: 100m, memory: 112Mi}
+      limits: {cpu: 300m, memory: 224Mi}
+    autoscaling: {enabled: true, minReplicas: 2, maxReplicas: 3, targetCPUUtilizationPercentage: 70}
+  inventory:
+    replicas: 1
+    resources:
+      requests: {cpu: 50m, memory: 96Mi}
+      limits: {cpu: 300m, memory: 192Mi}
+    autoscaling: {enabled: true, minReplicas: 1, maxReplicas: 2, targetCPUUtilizationPercentage: 70}
+  payment:
+    replicas: 1
+    resources:
+      requests: {cpu: 50m, memory: 96Mi}
+      limits: {cpu: 300m, memory: 192Mi}
+    autoscaling: {enabled: true, minReplicas: 1, maxReplicas: 2, targetCPUUtilizationPercentage: 70}
+  fulfillment:
+    replicas: 1
+    resources:
+      requests: {cpu: 50m, memory: 96Mi}
+      limits: {cpu: 300m, memory: 192Mi}
+    # Off by default: a queue worker's bottleneck is rarely its own CPU
+    # (the backlog exercise is about exactly that).
+    autoscaling: {enabled: false, minReplicas: 1, maxReplicas: 2, targetCPUUtilizationPercentage: 70}
+  loadgen:
+    replicas: 1
+    resources:
+      requests: {cpu: 50m, memory: 96Mi}
+      limits: {cpu: 300m, memory: 192Mi}
+  labcontrol:
+    replicas: 1
+    resources:
+      requests: {cpu: 10m, memory: 64Mi}
+      limits: {cpu: 100m, memory: 128Mi}
+
+# Dependency call policy (per attempt) and pools. Changing these changes the
+# config revision on every pod (webshop.config.revision).
+app:
+  dbPoolMax: 5
+  dbAcquireTimeoutSeconds: 2
+  inventoryTimeoutSeconds: 2
+  inventoryAttempts: 2
+  paymentTimeoutSeconds: 1.5
+  paymentAttempts: 3
+  checkoutTimeoutSeconds: 8
+  workerConcurrency: 4
+  pickTimeSeconds: 0.15
+  # kube-proxy balances connections, not requests. With keep-alive on, one
+  # client connection can pin nearly all of a caller's traffic to one replica
+  # (try it: the per-pod panels go lopsided and new HPA replicas idle).
+  httpKeepalive: false
+  logLevel: INFO
+
+# The synthetic client and the SLI it measures. The deadline is part of the
+# SLI definition: changing it changes what "good" means.
+synthetic:
+  enabled: true
+  ratePerSecond: 1.0
+  deadlineSeconds: 5
+  pollSeconds: 0.4
+  validationRatio: 0.05
+  auditDelaySeconds: 30
+
+# Lab-only fault and load controller (internal; reach it with
+# `kubectl port-forward` through tools/lab.py). Faults are off until set.
+labControl:
+  enabled: true
+
+# Sends app telemetry to this OTLP/HTTP endpoint instead of the bundled
+# Collector (e.g. an existing Collector). Empty = <release>-collector:4318.
+otel:
+  endpoint: ""
+  # Optional Secret whose key OTEL_EXPORTER_OTLP_HEADERS holds exporter
+  # headers (e.g. "authorization=Basic ...").
+  headersSecret: ""
+  metricExportIntervalMs: 10000
+
+scheduling:
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# DNS for the webshop's own pods. Service URLs are fully qualified
+# (<svc>.<ns>.svc.cluster.local - four dots), and with the Kubernetes default
+# ndots:5 every lookup first tries each search domain, the node's own
+# included, which leaves the cluster: ~4 ms per lookup in the lab, paid on
+# every request because service clients open a connection per request
+# (app.httpKeepalive). ndots:2 resolves those names directly; short names
+# still go through the search list. {} keeps the cluster default.
+dnsConfig:
+  options:
+    - {name: ndots, value: "2"}
+
+# ------------------------------------------------------------- data stores
+postgresql:
+  # false = use an existing server (external.*); the chart then creates no
+  # database pod, and the Secret below must already exist.
+  enabled: true
+  image: docker.io/library/postgres:17.11-trixie
+  database: webshop
+  username: webshop
+  # Secret with key "password". Empty = the chart generates one (kept
+  # across upgrades).
+  existingSecret: ""
+  external:
+    host: ""
+    port: 5432
+  maxConnections: 60
+  resources:
+    requests: {cpu: 100m, memory: 160Mi}
+    limits: {cpu: 500m, memory: 384Mi}
+  persistence:
+    size: 2Gi
+  exporter:
+    enabled: true
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+    resources:
+      requests: {cpu: 10m, memory: 24Mi}
+      limits: {cpu: 100m, memory: 64Mi}
+
+rabbitmq:
+  enabled: true
+  image: docker.io/library/rabbitmq:4.3.6
+  username: webshop
+  existingSecret: ""          # Secret with key "password"
+  external:
+    host: ""
+    port: 5672
+    vhost: /
+  resources:
+    requests: {cpu: 100m, memory: 192Mi}
+    limits: {cpu: 500m, memory: 384Mi}
+  persistence:
+    size: 1Gi
+
+# ------------------------------------------------------------- storage
+# How the durable components (PostgreSQL, RabbitMQ, Prometheus, Loki, Tempo,
+# Grafana) get their volumes:
+#   storageClass - PVCs from a StorageClass ("" = the cluster default).
+#                  Needs a working provisioner.
+#   localPV      - the chart creates local PersistentVolumes pinned to one
+#                  node, in directories you create there first (README,
+#                  "Storage"). For clusters with no provisioner, e.g. the
+#                  AWS kubeadm lab.
+#   ephemeral    - emptyDir: nothing survives a pod restart. Quick tries only.
+storage:
+  mode: storageClass
+  storageClassName: ""
+  localPV:
+    nodeName: worker
+    basePath: /var/lib/webshop
+    # matched by the PVCs the chart and its subcharts create
+    storageClassName: webshop-local
+
+# ------------------------------------------------------- network policies
+networkPolicy:
+  enabled: true
+  # Pods that talk to the Kubernetes API (Collector, Prometheus,
+  # kube-state-metrics) need egress to the API server's real address: the
+  # NetworkPolicy is evaluated after kube-proxy has rewritten the
+  # kubernetes Service IP. Narrow this to your control plane, e.g.
+  # 10.0.1.10/32 in the AWS lab.
+  apiServer:
+    cidrs: [0.0.0.0/0]
+    port: 6443
+  # Prometheus scrapes cAdvisor and resource metrics from each kubelet
+  # (host network, :10250). Narrow this to the node subnet.
+  kubelet:
+    cidrs: [0.0.0.0/0]
+    port: 10250
+  # Namespaces of ingress/gateway controllers allowed to reach the
+  # storefront (and Grafana), when exposure.* is used.
+  ingressControllerNamespaces: []
+
+# ------------------------------------------------------- optional exposure
+# Port-forwarding is the default way in (README). These attach to a
+# controller you already run; lab-control is never exposed.
+exposure:
+  ingress:
+    enabled: false
+    className: nginx
+    host: webshop.local
+    grafanaHost: ""
+  httpRoute:
+    enabled: false
+    parentRefs: []            # e.g. [{name: app-gateway, namespace: three-tier}]
+    hostnames: [webshop.local]
+
+migration:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 3600
+
+# =========================================================================
+# Telemetry configuration (../observability) and backends (upstream charts)
+# =========================================================================
+observability:
+  enabled: true
+
+collector:
+  enabled: true
+  mode: deployment
+  # One replica on purpose: the Prometheus exporter holds the series it
+  # received, and scaling the gateway would need either node-local agents or
+  # a load-balancing exporter keyed by service.instance.id (README,
+  # "Scaling the telemetry path").
+  replicaCount: 1
+  image:
+    repository: otel/opentelemetry-collector-contrib
+    tag: "0.161.0"
+  command:
+    name: otelcol-contrib
+  configMap:
+    create: false
+    existingName: '{{ .Release.Name }}-collector-config'
+  ports:
+    otlp: {enabled: true}
+    otlp-http: {enabled: true}
+    jaeger-compact: {enabled: false}
+    jaeger-thrift: {enabled: false}
+    jaeger-grpc: {enabled: false}
+    zipkin: {enabled: false}
+    metrics: {enabled: true, containerPort: 8888, servicePort: 8888, protocol: TCP}
+    prom-exporter: {enabled: true, containerPort: 8889, servicePort: 8889, protocol: TCP}
+  useGOMEMLIMIT: true
+  # The Collector reads its config only at start-up, and the upstream chart
+  # cannot checksum a ConfigMap rendered by another chart - so restart it on
+  # every upgrade. Costs a few seconds of buffering per `helm upgrade`.
+  podAnnotations:
+    webshop.lab/release-revision: '{{ .Release.Revision }}'
+  resources:
+    requests: {cpu: 100m, memory: 160Mi}
+    limits: {cpu: 500m, memory: 320Mi}
+  # RBAC is a namespaced Role created by this chart (templates/collector-rbac.yaml).
+  clusterRole:
+    create: false
+  serviceAccount:
+    create: true
+    name: ""
+  livenessProbe:
+    httpGet: {port: 13133, path: /}
+  readinessProbe:
+    httpGet: {port: 13133, path: /}
+
+prometheus:
+  enabled: true
+  alertmanager:
+    enabled: false
+  prometheus-pushgateway:
+    enabled: false
+  prometheus-node-exporter:
+    enabled: false
+  kube-state-metrics:
+    enabled: true
+    # only objects in the release namespace (plus nodes)
+    namespaces: "{{ .Release.Namespace }}"
+    collectors: [deployments, horizontalpodautoscalers, nodes, pods, replicasets, statefulsets, jobs, persistentvolumeclaims, services]
+    resources:
+      requests: {cpu: 10m, memory: 32Mi}
+      limits: {cpu: 100m, memory: 96Mi}
+  configmapReload:
+    prometheus:
+      # 32Mi was too tight: after a reinstall this sidecar sat at 92% of it
+      # for minutes (ContainerNearMemoryLimit). If it is OOM-killed, rule and
+      # config changes silently stop reaching Prometheus.
+      resources:
+        requests: {cpu: 5m, memory: 16Mi}
+        limits: {cpu: 50m, memory: 64Mi}
+  server:
+    configMapOverrideName: prometheus-config
+    extraFlags:
+      - web.enable-lifecycle
+      - enable-feature=exemplar-storage
+    retention: 3d
+    retentionSize: 2GB
+    exemplars:
+      max_exemplars: 100000
+    persistentVolume:
+      enabled: true
+      size: 3Gi
+      # Like the StatefulSet claims, survive `helm uninstall` (and are
+      # re-adopted by the next install), so a reinstall finds its data.
+      annotations:
+        helm.sh/resource-policy: keep
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: 1000m, memory: 640Mi}
+
+loki:
+  enabled: true
+  deploymentMode: Monolithic
+  # namespaced Role instead of the chart's default ClusterRole
+  rbac:
+    namespaced: true
+  loki:
+    auth_enabled: false
+    commonConfig:
+      replication_factor: 1
+    storage:
+      type: filesystem
+    schemaConfig:
+      configs:
+        - from: "2024-01-01"
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index: {prefix: index_, period: 24h}
+    limits_config:
+      allow_structured_metadata: true
+      retention_period: 72h
+      # Index labels from OTLP resource attributes: only the low-cardinality
+      # ones. Everything else (pod, trace_id, order ID, ...) is structured
+      # metadata - queryable, not indexed.
+      otlp_config:
+        resource_attributes:
+          ignore_defaults: true
+          attributes_config:
+            - action: index_label
+              attributes:
+                - service.name
+                - service.namespace
+                - deployment.environment.name
+                - k8s.namespace.name
+    compactor:
+      retention_enabled: true
+      delete_request_store: filesystem
+    pattern_ingester:
+      enabled: false
+    ui:
+      enabled: false
+  singleBinary:
+    replicas: 1
+    affinity: {}
+    persistence:
+      enabled: true
+      size: 3Gi
+    resources:
+      requests: {cpu: 100m, memory: 192Mi}
+      limits: {cpu: 1000m, memory: 512Mi}
+  read: {replicas: 0}
+  write: {replicas: 0}
+  backend: {replicas: 0}
+  gateway: {enabled: false}
+  chunksCache: {enabled: false}
+  resultsCache: {enabled: false}
+  lokiCanary: {enabled: false}
+  test: {enabled: false}
+  ruler: {enabled: false}
+  sidecar:
+    rules: {enabled: false}
+  minio: {enabled: false}
+
+tempo:
+  enabled: true
+  tempo:
+    reportingEnabled: false
+    # every trace kept for 48h (no sampling in the lab - see the README)
+    retention: 48h
+    receivers:
+      otlp:
+        protocols:
+          grpc: {endpoint: "0.0.0.0:4317"}
+    # Compaction is Tempo's memory peak. With the defaults (blocks up to
+    # 100 GiB, 4 input blocks per job) one compaction of a busy hour
+    # outgrew a 640 Mi limit; the restarted pod was handed the same job and
+    # was OOM-killed again, in a loop (found in the lab). Small jobs, more
+    # memory, and a Go memory limit below the container limit.
+    backendScheduler:
+      provider:
+        compaction:
+          max_input_blocks: 2
+          compaction:
+            max_block_bytes: 104857600       # 100 MiB
+            max_compaction_objects: 500000
+    extraEnv:
+      - {name: GOMEMLIMIT, value: 800MiB}
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: 1000m, memory: 1Gi}
+  persistence:
+    enabled: true
+    size: 5Gi
+
+grafana:
+  enabled: true
+  # No sidecar watches anything here, so namespaced RBAC is plenty.
+  rbac:
+    namespaced: true
+  # credentials from the webshop chart (templates/secrets.yaml)
+  admin:
+    existingSecret: '{{ .Release.Name }}-grafana-admin'
+  # Lab convenience, local-only (port-forward): anonymous Editor, so Explore
+  # works without logging in. The admin password is in the
+  # <release>-grafana-admin Secret (python tools/lab.py grafana-password).
+  # Turn this off before exposing Grafana.
+  grafana.ini:
+    auth.anonymous:
+      enabled: true
+      org_role: Editor
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false
+      check_for_plugin_updates: false
+    plugins:
+      # Grafana 13 runs most bundled data source plugins as separate
+      # processes, used or not: 13 of them here, ~120 MB together. Grafana
+      # was OOM-killed twice in the lab at a 384 Mi limit. Only Prometheus,
+      # Loki and Tempo are provisioned, so the rest are switched off.
+      disable_plugins: cloudwatch,elasticsearch,grafana-azure-monitor-datasource,grafana-postgresql-datasource,grafana-pyroscope-datasource,grafana-testdata-datasource,graphite,influxdb,jaeger,mssql,mysql,opentsdb,stackdriver,zipkin
+      # The NetworkPolicy allows no internet egress: don't try to download
+      # plugins at start-up (it only fails and logs errors).
+      preinstall_disabled: true
+  persistence:
+    enabled: true
+    size: 512Mi
+    annotations:
+      helm.sh/resource-policy: keep
+  env:
+    GOMEMLIMIT: 400MiB        # Go GC works harder before the 512 Mi limit
+  resources:
+    requests: {cpu: 50m, memory: 192Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+  testFramework:
+    enabled: false
+  # Provisioning comes from the observability chart's ConfigMaps.
+  extraConfigmapMounts:
+    - name: webshop-datasources
+      mountPath: /etc/grafana/provisioning/datasources
+      configMap: '{{ .Release.Name }}-grafana-datasources'
+      readOnly: true
+    - name: webshop-dashboard-provider
+      mountPath: /etc/grafana/provisioning/dashboards
+      configMap: '{{ .Release.Name }}-grafana-dashboard-provider'
+      readOnly: true
+    - name: webshop-dashboards
+      mountPath: /var/lib/grafana/dashboards/webshop
+      configMap: '{{ .Release.Name }}-grafana-dashboards'
+      readOnly: true

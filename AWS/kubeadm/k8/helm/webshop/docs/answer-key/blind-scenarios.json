@@ -1,0 +1,99 @@
+{
+  "_comment": "ANSWER KEY DATA - solvers: do not open. Used by `python tools/lab.py blind start`. Each scenario combines at least two faults; 'replica:N' targets the Nth pod (sorted by name) of that service. Explanations: blind-answers.md.",
+  "scenarios": [
+    {
+      "id": "B1",
+      "title": "One inventory replica is slow, and the warehouse is short-staffed",
+      "requires": {
+        "inventory": 2
+      },
+      "faults": [
+        {
+          "kind": "latency",
+          "service": "inventory",
+          "instance": "replica:0",
+          "params": {
+            "operation": "reserve",
+            "delay_ms": 1400,
+            "jitter_ms": 700,
+            "rate": 1.0
+          }
+        },
+        {
+          "kind": "throughput",
+          "service": "fulfillment",
+          "params": {
+            "concurrency": 1,
+            "extra_delay_ms": 900
+          }
+        }
+      ]
+    },
+    {
+      "id": "B2",
+      "title": "Wrong colors from the warehouse while payment captures fail intermittently",
+      "faults": [
+        {
+          "kind": "wrong_variant",
+          "service": "fulfillment",
+          "params": {
+            "rate": 0.25
+          }
+        },
+        {
+          "kind": "payment_failures",
+          "service": "payment",
+          "params": {
+            "operation": "capture",
+            "error_rate": 0.4,
+            "timeout_rate": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "B3",
+      "title": "Payment database connections leaked, during a traffic surge",
+      "faults": [
+        {
+          "kind": "pool_hog",
+          "service": "payment",
+          "params": {
+            "mode": "leak",
+            "connections": 5
+          }
+        }
+      ],
+      "load": {
+        "rate": 4.0
+      }
+    },
+    {
+      "id": "B4",
+      "title": "One checkout replica with a mistuned payment timeout, plus a slow inventory commit",
+      "requires": {
+        "checkout": 2
+      },
+      "faults": [
+        {
+          "kind": "runtime_override",
+          "service": "checkout",
+          "instance": "replica:1",
+          "params": {
+            "payment_timeout_ms": 1
+          }
+        },
+        {
+          "kind": "latency",
+          "service": "inventory",
+          "params": {
+            "operation": "commit",
+            "delay_ms": 2500,
+            "jitter_ms": 500,
+            "rate": 0.6
+          }
+        }
+      ]
+    }
+  ]
+}

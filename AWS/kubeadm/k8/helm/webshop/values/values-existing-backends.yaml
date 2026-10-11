@@ -1,0 +1,96 @@
+# Example: run the webshop against services you already operate.
+#
+# - PostgreSQL and RabbitMQ: your own servers; credentials from Secrets you
+#   create (key "password"), never from values.
+# - Telemetry: the bundled Collector stays (it adds Kubernetes enrichment and
+#   the events pipeline) but exports to your Tempo, Loki and Prometheus.
+#   Exporter auth headers come from a Secret as environment variables.
+# - Grafana: the dashboards and data sources render as ConfigMaps labelled
+#   grafana_dashboard / grafana_datasource for your Grafana's sidecar.
+#
+# Create the Secrets first (names below are examples), e.g.
+#   kubectl -n webshop create secret generic webshop-db --from-literal=password=...
+#   kubectl -n webshop create secret generic webshop-mq --from-literal=password=...
+#   kubectl -n webshop create secret generic webshop-telemetry-auth --from-literal=TRACES_AUTH="Basic ..." --from-literal=LOGS_AUTH="Basic ..." --from-literal=METRICS_AUTH="Basic ..."
+
+global:
+  webshop:
+    environment: staging
+    clusterName: my-cluster
+
+image:
+  registry: registry.example.com
+  repository: team/webshop
+  tag: "0.1.0"
+imagePullSecrets:
+  - name: regcred
+
+postgresql:
+  enabled: false
+  external:
+    host: postgres.databases.svc.cluster.local
+    port: 5432
+  database: webshop
+  username: webshop
+  existingSecret: webshop-db
+
+rabbitmq:
+  enabled: false
+  external:
+    host: rabbitmq.messaging.svc.cluster.local
+    port: 5672
+    vhost: webshop
+  username: webshop
+  existingSecret: webshop-mq
+
+# No bundled backends.
+prometheus:
+  enabled: false
+loki:
+  enabled: false
+tempo:
+  enabled: false
+grafana:
+  enabled: false
+
+storage:
+  mode: ephemeral          # nothing durable left in this release
+
+collector:
+  enabled: true
+  extraEnvsFrom:
+    - secretRef:
+        name: webshop-telemetry-auth
+
+observability:
+  collector:
+    traces:
+      endpoint: tempo-distributor.observability.svc.cluster.local:4317
+      insecure: true
+      headersFromEnv: {authorization: TRACES_AUTH}
+    logs:
+      endpoint: http://loki-gateway.observability.svc.cluster.local/otlp
+      headersFromEnv: {authorization: LOGS_AUTH}
+    metrics:
+      # Push to Prometheus' native OTLP receiver (needs
+      # --web.enable-otlp-receiver; add --enable-feature=exemplar-storage to
+      # keep exemplars). Use prometheusExporter instead if your Prometheus
+      # should scrape the Collector pod(s).
+      mode: otlpHttp
+      otlpEndpoint: http://prometheus.observability.svc.cluster.local:9090/api/v1/otlp/v1/metrics
+      headersFromEnv: {authorization: METRICS_AUTH}
+  prometheus:
+    # Scrape config/rules are for the bundled Prometheus; with an operator,
+    # translate webshop-alerts.yml into a PrometheusRule.
+    config: false
+  grafana:
+    urls:
+      prometheus: http://prometheus.observability.svc.cluster.local:9090
+      loki: http://loki-gateway.observability.svc.cluster.local
+      tempo: http://tempo-query-frontend.observability.svc.cluster.local:3200
+
+networkPolicy:
+  enabled: true
+  apiServer:
+    cidrs: [10.0.0.0/8]
+    port: 443

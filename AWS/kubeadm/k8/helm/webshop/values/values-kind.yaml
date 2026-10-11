@@ -1,0 +1,51 @@
+# Optional secondary profile: a local Kind cluster shaped like the AWS lab
+# (tools/kind_cluster.py: one tainted control plane, one worker reserved down
+# to ~2 vCPU / 3.7 GiB allocatable, Calico, no default StorageClass).
+# Images are side-loaded with `kind load` - a Kind-only shortcut; the AWS
+# lab pulls from a registry.
+#
+#   python tools/kind_cluster.py create
+#   helm upgrade --install webshop ./chart -n webshop --create-namespace -f values/values-kind.yaml
+
+global:
+  webshop:
+    environment: kind-lab
+    clusterName: kind-webshop-lab
+
+image:
+  registry: docker.io
+  repository: library/webshop       # what `kind load docker-image webshop:0.1.0` registers
+  tag: "0.1.0"
+  pullPolicy: Never
+
+storage:
+  mode: localPV
+  localPV:
+    nodeName: webshop-lab-worker
+    basePath: /var/lib/webshop
+    storageClassName: webshop-local
+prometheus:
+  server:
+    persistentVolume:
+      storageClass: webshop-local
+loki:
+  singleBinary:
+    persistence:
+      storageClass: webshop-local
+tempo:
+  persistence:
+    storageClassName: webshop-local
+grafana:
+  persistence:
+    storageClassName: webshop-local
+
+networkPolicy:
+  # Kind nodes live on a Docker bridge network; the control plane's address
+  # is assigned at creation. 172.16.0.0/12 covers Docker's default pools.
+  apiServer:
+    cidrs: [172.16.0.0/12]
+    port: 6443
+  # the nodes themselves (kubelet :10250) - the Kind Docker network
+  kubelet:
+    cidrs: [172.16.0.0/12]
+    port: 10250

@@ -1,0 +1,13 @@
+# Grafana dashboard provider: load every JSON file in the mounted directory
+# into the "Webshop" folder. Provisioned dashboards are read-only in the UI;
+# change them here (or in tools/build_dashboards.py) and upgrade the release.
+apiVersion: 1
+providers:
+  - name: webshop
+    folder: Webshop
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards/webshop

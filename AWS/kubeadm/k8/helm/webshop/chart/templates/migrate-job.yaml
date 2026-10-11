@@ -1,0 +1,57 @@
+{{- $ctx := dict "root" . "component" "migrate" }}
+# Schema migration + catalog seed. Idempotent, so it runs on every install
+# and upgrade (a new Job per revision; Jobs are immutable). It waits for the
+# database itself, so it can be created in the same install as PostgreSQL;
+# the services wait for the schema before reporting ready.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-migrate-{{ .Release.Revision }}
+  labels:
+    {{- include "webshop.labels" $ctx | nindent 4 }}
+spec:
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.migration.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "webshop.labels" $ctx | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "webshop.podSecurity" . | nindent 8 }}
+        runAsUser: 10001
+        runAsGroup: 10001
+      {{- include "webshop.scheduling" . | nindent 6 }}
+      {{- include "webshop.dnsConfig" . | nindent 6 }}
+      containers:
+        - name: migrate
+          image: {{ include "webshop.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: [migrate]
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-config
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - {name: WEBSHOP_INSTANCE_ID, value: $(POD_NAME)}
+            - {name: WEBSHOP_VERSION, value: {{ .Values.image.tag | quote }}}
+            - name: PGPASSWORD
+              valueFrom: {secretKeyRef: {name: {{ include "webshop.pgSecret" . }}, key: password}}
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {cpu: 500m, memory: 192Mi}
+          securityContext:
+            {{- include "webshop.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 16Mi}

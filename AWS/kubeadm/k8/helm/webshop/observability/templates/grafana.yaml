@@ -1,0 +1,41 @@
+{{- if .Values.grafana.datasources }}
+# Mounted by the grafana subchart (extraConfigmapMounts) as provisioning.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-grafana-datasources
+  labels:
+    {{- include "webshop-observability.labels" . | nindent 4 }}
+    # Also discoverable by a Grafana sidecar in an existing stack.
+    grafana_datasource: "1"
+data:
+  webshop.yaml: |
+    {{- tpl (.Files.Get "grafana/provisioning/datasources.yaml") . | nindent 4 }}
+{{- end }}
+{{- if .Values.grafana.dashboards }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-grafana-dashboard-provider
+  labels:
+    {{- include "webshop-observability.labels" . | nindent 4 }}
+data:
+  webshop.yaml: |
+    {{- .Files.Get "grafana/provisioning/dashboards.yaml" | nindent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-grafana-dashboards
+  labels:
+    {{- include "webshop-observability.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Webshop
+data:
+  {{- range $path, $_ := .Files.Glob "grafana/dashboards/*.json" }}
+  {{ base $path }}: |-
+    {{- $.Files.Get $path | nindent 4 }}
+  {{- end }}
+{{- end }}

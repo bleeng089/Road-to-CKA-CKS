@@ -1,0 +1,8 @@
+apiVersion: v2
+name: webshop-observability
+description: >-
+  Telemetry configuration for the webshop lab: the OpenTelemetry Collector
+  pipeline, Prometheus scrape configuration and alert rules, and Grafana data
+  sources and dashboards. Consumed by the webshop chart as a local dependency.
+type: application
+version: 0.1.0

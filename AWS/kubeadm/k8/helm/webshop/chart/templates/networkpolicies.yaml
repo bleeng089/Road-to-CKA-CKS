@@ -1,0 +1,364 @@
+{{- if .Values.networkPolicy.enabled }}
+{{/*
+Default-deny for the whole release namespace, then one allow-list per flow -
+the same pattern as Module 8 of the networking lessons, applied to every
+application and telemetry path:
+
+  storefront -> checkout, inventory            checkout -> inventory, payment
+  fulfillment -> inventory, payment            loadgen -> storefront, payment
+  checkout, inventory, payment, fulfillment, migrate -> postgresql
+  checkout, fulfillment -> rabbitmq            app pods -> lab-control
+  app pods -> collector (OTLP 4317/4318)       collector -> tempo, loki, API server
+  prometheus -> collector, KSM, exporters, backends, API server (SD + cAdvisor proxy)
+  grafana -> prometheus, loki, tempo           everyone -> CoreDNS
+
+Ports are pod ports (policies apply after kube-proxy DNAT). kubectl
+port-forward is not subject to these policies (it enters the pod's network
+namespace through the kubelet), which is why it is the default way in.
+*/}}
+{{- $rel := .Release.Name }}
+{{- $apps := list "storefront" "checkout" "inventory" "payment" "fulfillment" "loadgen" }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-default-deny
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-allow-dns
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+# Every instrumented pod may send OTLP to the Collector, and poll lab-control.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-app-telemetry-egress
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/instance, operator: In, values: [{{ $rel }}]}
+      - {key: app.kubernetes.io/component, operator: In, values: [{{ join ", " (concat $apps (list "migrate" "journey-test")) }}]}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" "collector") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 4317}
+        - {protocol: TCP, port: 4318}
+    - to:
+        - {{ include "webshop.np.app" (dict "rel" $rel "c" "lab-control") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 8080}
+{{- range $edge := list
+    (dict "to" "storefront" "from" (list "loadgen" "journey-test"))
+    (dict "to" "checkout" "from" (list "storefront"))
+    (dict "to" "inventory" "from" (list "storefront" "checkout" "fulfillment"))
+    (dict "to" "payment" "from" (list "checkout" "fulfillment" "loadgen" "journey-test"))
+    (dict "to" "lab-control" "from" $apps) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-{{ $edge.to }}-ingress
+spec:
+  {{- include "webshop.np.app" (dict "rel" $rel "c" $edge.to) | nindent 2 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- range $edge.from }}
+        - {{ include "webshop.np.app" (dict "rel" $rel "c" .) | nindent 10 | trim }}
+        {{- end }}
+        {{- if eq $edge.to "storefront" }}
+        {{- range $.Values.networkPolicy.ingressControllerNamespaces }}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ . }}}
+        {{- end }}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: 8080}
+{{- end }}
+{{- range $edge := list
+    (dict "from" "storefront" "to" (list "checkout" "inventory"))
+    (dict "from" "checkout" "to" (list "inventory" "payment"))
+    (dict "from" "fulfillment" "to" (list "inventory" "payment"))
+    (dict "from" "loadgen" "to" (list "storefront" "payment"))
+    (dict "from" "journey-test" "to" (list "storefront" "payment")) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-{{ $edge.from }}-egress
+spec:
+  {{- include "webshop.np.app" (dict "rel" $rel "c" $edge.from) | nindent 2 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        {{- range $edge.to }}
+        - {{ include "webshop.np.app" (dict "rel" $rel "c" .) | nindent 10 | trim }}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: 8080}
+{{- end }}
+---
+# Database and broker clients.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-datastore-clients-egress
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/instance, operator: In, values: [{{ $rel }}]}
+      - {key: app.kubernetes.io/component, operator: In, values: [checkout, inventory, payment, fulfillment, migrate]}
+  policyTypes: [Egress]
+  egress:
+    {{- if .Values.postgresql.enabled }}
+    - to:
+        - {{ include "webshop.np.app" (dict "rel" $rel "c" "postgresql") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 5432}
+    {{- else }}
+    - ports:
+        - {protocol: TCP, port: {{ .Values.postgresql.external.port }}}
+    {{- end }}
+    {{- if .Values.rabbitmq.enabled }}
+    - to:
+        - {{ include "webshop.np.app" (dict "rel" $rel "c" "rabbitmq") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 5672}
+    {{- else }}
+    - ports:
+        - {protocol: TCP, port: {{ .Values.rabbitmq.external.port }}}
+    {{- end }}
+{{- if .Values.postgresql.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-postgresql-ingress
+spec:
+  {{- include "webshop.np.app" (dict "rel" $rel "c" "postgresql") | nindent 2 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- range list "checkout" "inventory" "payment" "fulfillment" "migrate" }}
+        - {{ include "webshop.np.app" (dict "rel" $rel "c" .) | nindent 10 | trim }}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: 5432}
+    - from:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" "prometheus") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 9187}
+{{- end }}
+{{- if .Values.rabbitmq.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-rabbitmq-ingress
+spec:
+  {{- include "webshop.np.app" (dict "rel" $rel "c" "rabbitmq") | nindent 2 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - {{ include "webshop.np.app" (dict "rel" $rel "c" "checkout") | nindent 10 | trim }}
+        - {{ include "webshop.np.app" (dict "rel" $rel "c" "fulfillment") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 5672}
+    - from:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" "prometheus") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 15692}
+{{- end }}
+{{- if .Values.collector.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-collector
+spec:
+  {{- include "webshop.np.chart" (dict "rel" $rel "n" "collector") | nindent 2 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/instance, operator: In, values: [{{ $rel }}]}
+              - {key: app.kubernetes.io/component, operator: In, values: [{{ join ", " (concat $apps (list "migrate" "journey-test")) }}]}
+      ports:
+        - {protocol: TCP, port: 4317}
+        - {protocol: TCP, port: 4318}
+    - from:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" "prometheus") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 8888}
+        - {protocol: TCP, port: 8889}
+  egress:
+    {{- if .Values.tempo.enabled }}
+    - to:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" "tempo") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 4317}
+    {{- end }}
+    {{- if .Values.loki.enabled }}
+    - to:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" "loki") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 3100}
+    {{- end }}
+    {{- if not (and .Values.tempo.enabled .Values.loki.enabled) }}
+    # external telemetry backends (values-existing-backends.yaml)
+    - ports:
+        - {protocol: TCP, port: 443}
+        - {protocol: TCP, port: 4317}
+        - {protocol: TCP, port: 4318}
+        - {protocol: TCP, port: 3100}
+    {{- end }}
+    {{- include "webshop.np.apiserver" .Values.networkPolicy.apiServer | nindent 4 }}
+{{- end }}
+{{- if .Values.prometheus.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-prometheus
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $rel }}
+      app.kubernetes.io/name: prometheus
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" "grafana") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 9090}
+  egress:
+    - to:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" "collector") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 8888}
+        - {protocol: TCP, port: 8889}
+    - to:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" "kube-state-metrics") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 8080}
+    - to:
+        - {{ include "webshop.np.app" (dict "rel" $rel "c" "postgresql") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 9187}
+    - to:
+        - {{ include "webshop.np.app" (dict "rel" $rel "c" "rabbitmq") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 15692}
+    - to:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" "loki") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 3100}
+    - to:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" "tempo") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 3200}
+    - to:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" "grafana") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 3000}
+    {{- include "webshop.np.apiserver" .Values.networkPolicy.apiServer | nindent 4 }}
+    # kubelets: cAdvisor and resource metrics
+    {{- include "webshop.np.apiserver" .Values.networkPolicy.kubelet | nindent 4 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-kube-state-metrics
+spec:
+  {{- include "webshop.np.chart" (dict "rel" $rel "n" "kube-state-metrics") | nindent 2 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" "prometheus") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 8080}
+  egress:
+    {{- include "webshop.np.apiserver" .Values.networkPolicy.apiServer | nindent 4 }}
+{{- end }}
+{{- range $b := list (dict "n" "loki" "port" 3100 "on" .Values.loki.enabled "from" (list "collector" "grafana" "prometheus")) (dict "n" "tempo" "port" 3200 "on" .Values.tempo.enabled "from" (list "grafana" "prometheus")) }}
+{{- if $b.on }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-{{ $b.n }}
+spec:
+  {{- include "webshop.np.chart" (dict "rel" $rel "n" $b.n) | nindent 2 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        {{- range $b.from }}
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" .) | nindent 10 | trim }}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: {{ $b.port }}}
+    {{- if eq $b.n "tempo" }}
+    - from:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" "collector") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 4317}
+    {{- end }}
+    # the single-process backends talk to themselves (memberlist / gRPC)
+    - from:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" $b.n) | nindent 10 | trim }}
+  egress:
+    - to:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" $b.n) | nindent 10 | trim }}
+{{- end }}
+{{- end }}
+{{- if .Values.grafana.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-grafana
+spec:
+  {{- include "webshop.np.chart" (dict "rel" $rel "n" "grafana") | nindent 2 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" "prometheus") | nindent 10 | trim }}
+        {{- range .Values.networkPolicy.ingressControllerNamespaces }}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ . }}}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: 3000}
+  egress:
+    - to:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" "prometheus") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 9090}
+    - to:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" "loki") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 3100}
+    - to:
+        - {{ include "webshop.np.chart" (dict "rel" $rel "n" "tempo") | nindent 10 | trim }}
+      ports:
+        - {protocol: TCP, port: 3200}
+{{- end }}
+{{- end }}

@@ -1,0 +1,76 @@
+# Grafana data sources and the links between them (Helm-templated).
+# In Grafana provisioning files "$" introduces an environment variable, so
+# Grafana's own ${__...} variables are written "$${__...}".
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: {{ include "webshop-observability.prometheusUrl" . }}
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      timeInterval: {{ .Values.prometheus.scrapeInterval }}
+      # Metrics -> traces: a histogram exemplar carries the trace_id of one
+      # observation; clicking it opens that trace in Tempo.
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: tempo
+          urlDisplayLabel: Open this trace
+
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: {{ include "webshop-observability.lokiUrl" . }}
+    jsonData:
+      maxLines: 1000
+      # Logs -> traces: trace_id is OTLP structured metadata on every record
+      # written inside a span; it becomes a link to Tempo.
+      derivedFields:
+        - name: Trace
+          matcherType: label
+          matcherRegex: trace_id
+          datasourceUid: tempo
+          url: "$${__value.raw}"
+          urlDisplayLabel: Open trace
+
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: {{ include "webshop-observability.tempoUrl" . }}
+    jsonData:
+      # Traces -> logs: from a span, every log record of the same trace,
+      # across all webshop services.
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-2m"
+        spanEndTimeShift: "2m"
+        customQuery: true
+        query: '{service_namespace="webshop"} | trace_id="$${__trace.traceId}"'
+      # Traces -> metrics: from a span, the request rate and latency of its service.
+      tracesToMetrics:
+        datasourceUid: prometheus
+        spanStartTimeShift: "-10m"
+        spanEndTimeShift: "10m"
+        tags:
+          - {key: service.name, value: service_name}
+        queries:
+          - name: Request rate
+            query: 'sum by (http_route) (rate(http_server_request_duration_seconds_count{$$__tags}[1m]))'
+          - name: p95 latency
+            query: 'histogram_quantile(0.95, sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket{$$__tags}[1m])))'
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+      lokiSearch:
+        datasourceUid: loki
+      traceQuery:
+        timeShiftEnabled: true
+        spanStartTimeShift: "-30m"
+        spanEndTimeShift: "30m"

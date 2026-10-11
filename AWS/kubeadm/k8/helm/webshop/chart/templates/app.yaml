@@ -1,0 +1,194 @@
+{{/*
+Stateless webshop components: one Deployment (and, where something calls
+it, one Service) per component, all from the same image.
+
+  name       resource suffix and app.kubernetes.io/component label
+  arg        python -m webshop <arg>
+  values     key under .Values.components
+  service    whether a ClusterIP Service fronts it
+  db / amqp  which credentials it gets
+  telemetry  whether it gets OTLP exporter settings (lab-control does not:
+             it sits outside the system being observed)
+*/}}
+{{- define "webshop.component" -}}
+{{- $root := .root -}}
+{{- $v := index $root.Values.components .values -}}
+{{- $ctx := dict "root" $root "component" .name -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "webshop.name" (dict "Release" $root.Release "component" .name) }}
+  labels:
+    {{- include "webshop.labels" $ctx | nindent 4 }}
+spec:
+  {{- if not (and $v.autoscaling $v.autoscaling.enabled) }}
+  replicas: {{ $v.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "webshop.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "webshop.labels" $ctx | nindent 8 }}
+      annotations:
+        webshop.lab/config-revision: {{ include "webshop.configRevision" $root }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      {{- with $root.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "webshop.podSecurity" $root | nindent 8 }}
+        runAsUser: 10001
+        runAsGroup: 10001
+      terminationGracePeriodSeconds: {{ .grace | default 30 }}
+      {{- include "webshop.scheduling" $root | nindent 6 }}
+      {{- include "webshop.dnsConfig" $root | nindent 6 }}
+      containers:
+        - name: {{ .name }}
+          image: {{ include "webshop.image" $root }}
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          args: [{{ .arg | quote }}]
+          ports:
+            - {name: http, containerPort: 8080, protocol: TCP}
+          envFrom:
+            - configMapRef:
+                name: {{ $root.Release.Name }}-config
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - name: POD_UID
+              valueFrom: {fieldRef: {fieldPath: metadata.uid}}
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+            # service.instance.id: the pod name - unique per running replica,
+            # and the same string you see in kubectl.
+            - name: WEBSHOP_INSTANCE_ID
+              value: $(POD_NAME)
+            - name: WEBSHOP_VERSION
+              value: {{ $root.Values.image.tag | quote }}
+            - name: WEBSHOP_CONFIG_REVISION
+              value: {{ include "webshop.configRevision" $root | quote }}
+            - name: WEBSHOP_HTTP_PORT
+              value: "8080"
+            {{- if .telemetry }}
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME),k8s.container.name={{ .name }}
+            {{- with $root.Values.otel.headersSecret }}
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              valueFrom: {secretKeyRef: {name: {{ . }}, key: OTEL_EXPORTER_OTLP_HEADERS}}
+            {{- end }}
+            {{- else }}
+            - name: LABCONTROL_URL
+              value: ""
+            {{- end }}
+            {{- if .db }}
+            - name: PGPASSWORD
+              valueFrom: {secretKeyRef: {name: {{ include "webshop.pgSecret" $root }}, key: password}}
+            {{- end }}
+            {{- if .amqp }}
+            - name: AMQP_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ include "webshop.amqpSecret" $root }}, key: password}}
+            {{- end }}
+          # Startup can take a while on a fresh install (waits for the
+          # database, the schema migration, and peers); the server only
+          # starts answering once its startup is complete.
+          startupProbe:
+            httpGet: {path: /livez, port: http}
+            periodSeconds: 2
+            failureThreshold: 150
+          livenessProbe:
+            httpGet: {path: /livez, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 2
+          lifecycle:
+            # Give endpoint removal time to propagate before the server
+            # stops accepting connections (graceful drain follows SIGTERM).
+            preStop:
+              exec: {command: [sleep, "5"]}
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          securityContext:
+            {{- include "webshop.containerSecurity" $root | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+{{- if .service }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "webshop.name" (dict "Release" $root.Release "component" .name) }}
+  labels:
+    {{- include "webshop.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "webshop.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - {name: http, port: 80, targetPort: http, protocol: TCP}
+{{- end }}
+{{- if and $v.autoscaling $v.autoscaling.enabled }}
+---
+# CPU-based autoscaling needs the resource metrics API (metrics-server);
+# Prometheus does not provide it. Utilisation is relative to the CPU request.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "webshop.name" (dict "Release" $root.Release "component" .name) }}
+  labels:
+    {{- include "webshop.labels" $ctx | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "webshop.name" (dict "Release" $root.Release "component" .name) }}
+  minReplicas: {{ $v.autoscaling.minReplicas }}
+  maxReplicas: {{ $v.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $v.autoscaling.targetCPUUtilizationPercentage }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies: [{type: Pods, value: 1, periodSeconds: 30}]
+    scaleDown:
+      # short, so the capacity exercise can be repeated within a session
+      stabilizationWindowSeconds: 120
+      policies: [{type: Pods, value: 1, periodSeconds: 60}]
+{{- end }}
+{{- end }}
+
+{{- include "webshop.component" (dict "root" . "name" "storefront" "arg" "storefront" "values" "storefront" "service" true "telemetry" true) }}
+---
+{{ include "webshop.component" (dict "root" . "name" "checkout" "arg" "checkout" "values" "checkout" "service" true "telemetry" true "db" true "amqp" true) }}
+---
+{{ include "webshop.component" (dict "root" . "name" "inventory" "arg" "inventory" "values" "inventory" "service" true "telemetry" true "db" true) }}
+---
+{{ include "webshop.component" (dict "root" . "name" "payment" "arg" "payment" "values" "payment" "service" true "telemetry" true "db" true) }}
+---
+{{ include "webshop.component" (dict "root" . "name" "fulfillment" "arg" "fulfillment" "values" "fulfillment" "service" false "telemetry" true "db" true "amqp" true "grace" 40) }}
+{{- if .Values.synthetic.enabled }}
+---
+{{ include "webshop.component" (dict "root" . "name" "loadgen" "arg" "loadgen" "values" "loadgen" "service" false "telemetry" true) }}
+{{- end }}
+{{- if .Values.labControl.enabled }}
+---
+{{ include "webshop.component" (dict "root" . "name" "lab-control" "arg" "labcontrol" "values" "labcontrol" "service" true "telemetry" false) }}
+{{- end }}

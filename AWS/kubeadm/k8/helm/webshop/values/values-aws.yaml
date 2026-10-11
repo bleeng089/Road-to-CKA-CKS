@@ -1,0 +1,56 @@
+# AWS kubeadm lab profile - the primary target.
+#
+# The cluster from AWS/kubeadm: two t3.medium nodes (2 vCPU / 4 GiB),
+# kubeadm 1.33, Calico (NetworkPolicy enforced), CoreDNS. The control plane
+# keeps its NoSchedule taint, so everything below runs on the worker. There
+# is no StorageClass and no volume provisioner, so durable components use
+# local PersistentVolumes on the worker (create the directories first:
+# README, "Storage"). See the README's capacity budget for how this fits.
+#
+#   helm upgrade --install webshop ./chart -n webshop --create-namespace -f values/values-aws.yaml --set image.repository=<your-registry-user>/webshop
+
+global:
+  webshop:
+    environment: aws-lab
+    clusterName: kubeadm-aws-lab
+
+image:
+  registry: docker.io
+  repository: CHANGE-ME/webshop    # override with --set image.repository=...
+  tag: "0.1.0"
+
+storage:
+  mode: localPV
+  localPV:
+    nodeName: worker                # kubeadm node name = kubernetes.io/hostname
+    basePath: /var/lib/webshop
+    storageClassName: webshop-local
+
+# The subcharts create their own PVCs; point them at the same class name so
+# they bind to the chart's pre-bound local PVs.
+prometheus:
+  server:
+    persistentVolume:
+      storageClass: webshop-local
+loki:
+  singleBinary:
+    persistence:
+      storageClass: webshop-local
+tempo:
+  persistence:
+    storageClassName: webshop-local
+grafana:
+  persistence:
+    storageClassName: webshop-local
+
+networkPolicy:
+  # The API server's real address (static private IP from the Terraform
+  # project: the first node, .10 in the subnet), port 6443. The kubernetes
+  # Service IP (10.96.0.1:443) is rewritten to this before Calico decides.
+  apiServer:
+    cidrs: [10.0.1.10/32]
+    port: 6443
+  # the nodes themselves (kubelet :10250) - the lab subnet (10.0.1.10/.11)
+  kubelet:
+    cidrs: [10.0.1.0/24]
+    port: 10250

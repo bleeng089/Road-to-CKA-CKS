@@ -1,0 +1,174 @@
+{
+ "uid": "webshop-order",
+ "title": "Webshop / Order investigation",
+ "description": "Everything about one order ID: logs from all services and the traces that touched it.",
+ "tags": [
+  "webshop"
+ ],
+ "timezone": "browser",
+ "editable": true,
+ "graphTooltip": 1,
+ "schemaVersion": 41,
+ "version": 1,
+ "refresh": "30s",
+ "time": {
+  "from": "now-3h",
+  "to": "now"
+ },
+ "fiscalYearStartMonth": 0,
+ "liveNow": false,
+ "templating": {
+  "list": [
+   {
+    "name": "order_id",
+    "label": "Order ID",
+    "type": "textbox",
+    "query": "",
+    "current": {
+     "text": "",
+     "value": ""
+    },
+    "options": []
+   },
+   {
+    "name": "trace_id",
+    "label": "Trace ID",
+    "type": "textbox",
+    "query": "",
+    "current": {
+     "text": "",
+     "value": ""
+    },
+    "options": []
+   }
+  ]
+ },
+ "annotations": {
+  "list": []
+ },
+ "links": [
+  {
+   "type": "dashboards",
+   "tags": [
+    "webshop"
+   ],
+   "asDropdown": true,
+   "title": "Webshop dashboards",
+   "includeVars": false,
+   "keepTime": true
+  }
+ ],
+ "panels": [
+  {
+   "type": "text",
+   "title": "",
+   "options": {
+    "mode": "markdown",
+    "content": "Paste an order ID (`ord-...`, from the UI, a bad-journey log line, or `tools/lab.py journey`). The logs below are every record carrying that order ID, from every service, in order; the table lists the traces that touched it (the synthetic journey trace includes checkout, the queue hop and fulfilment). Click a trace ID, or paste it into *Trace ID* for the waterfall here."
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 3
+   },
+   "id": 1
+  },
+  {
+   "type": "logs",
+   "title": "Order timeline: every log record for this order",
+   "description": "",
+   "datasource": {
+    "type": "loki",
+    "uid": "loki"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "loki",
+      "uid": "loki"
+     },
+     "expr": "{service_namespace=\"webshop\"} | webshop_order_id=\"$order_id\"",
+     "refId": "A",
+     "queryType": "range"
+    }
+   ],
+   "options": {
+    "showTime": true,
+    "wrapLogMessage": true,
+    "enableLogDetails": true,
+    "sortOrder": "Descending",
+    "dedupStrategy": "none",
+    "prettifyLogMessage": false
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 3,
+    "w": 24,
+    "h": 11
+   },
+   "id": 2
+  },
+  {
+   "type": "table",
+   "title": "Traces that touched this order",
+   "datasource": {
+    "type": "tempo",
+    "uid": "tempo"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "tempo",
+      "uid": "tempo"
+     },
+     "refId": "A",
+     "queryType": "traceql",
+     "limit": 20,
+     "tableType": "traces",
+     "query": "{ span.webshop.order.id = \"$order_id\" }"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "showHeader": true
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 14,
+    "w": 24,
+    "h": 7
+   },
+   "id": 3
+  },
+  {
+   "type": "traces",
+   "title": "Trace",
+   "datasource": {
+    "type": "tempo",
+    "uid": "tempo"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "tempo",
+      "uid": "tempo"
+     },
+     "refId": "A",
+     "queryType": "traceql",
+     "query": "$trace_id"
+    }
+   ],
+   "gridPos": {
+    "x": 0,
+    "y": 21,
+    "w": 24,
+    "h": 14
+   },
+   "id": 4
+  }
+ ]
+}

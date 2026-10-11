@@ -1,0 +1,13 @@
+{{- if .Values.collector.config }}
+# Mounted by the opentelemetry-collector subchart (configMap.existingName).
+# The chart requires the configuration under the key "relay".
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-collector-config
+  labels:
+    {{- include "webshop-observability.labels" . | nindent 4 }}
+data:
+  relay: |
+    {{- tpl (.Files.Get "collector/config.yaml") . | nindent 4 }}
+{{- end }}

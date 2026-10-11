@@ -1,0 +1,67 @@
+{{- if eq .Values.storage.mode "localPV" }}
+{{/*
+Lab storage for clusters without a dynamic provisioner (the AWS kubeadm lab
+has none): one local PersistentVolume per durable component, pinned to one
+node, pre-bound (claimRef) to the exact PVC that component will create.
+
+Prerequisite: the directories exist on that node (README, "Storage").
+A local volume lives on the node's disk: it survives pod restarts,
+rescheduling (the pod follows the volume to its node) and
+`helm uninstall` (these PVs are kept), but not the node itself - rebuilding
+the disposable EC2 lab deletes the data with the instance's root volume.
+*/}}
+{{- $l := .Values.storage.localPV }}
+{{- $rel := .Release.Name }}
+{{- $volumes := list }}
+{{- if .Values.postgresql.enabled }}
+{{- $volumes = append $volumes (dict "name" "postgresql" "claim" (printf "data-%s-postgresql-0" $rel) "size" .Values.postgresql.persistence.size) }}
+{{- end }}
+{{- if .Values.rabbitmq.enabled }}
+{{- $volumes = append $volumes (dict "name" "rabbitmq" "claim" (printf "data-%s-rabbitmq-0" $rel) "size" .Values.rabbitmq.persistence.size) }}
+{{- end }}
+{{- if and .Values.prometheus.enabled .Values.prometheus.server.persistentVolume.enabled }}
+{{- $volumes = append $volumes (dict "name" "prometheus" "claim" (printf "%s-prometheus-server" $rel) "size" .Values.prometheus.server.persistentVolume.size) }}
+{{- end }}
+{{- if and .Values.loki.enabled .Values.loki.singleBinary.persistence.enabled }}
+{{- $volumes = append $volumes (dict "name" "loki" "claim" (printf "storage-%s-loki-0" $rel) "size" .Values.loki.singleBinary.persistence.size) }}
+{{- end }}
+{{- if and .Values.tempo.enabled .Values.tempo.persistence.enabled }}
+{{- $volumes = append $volumes (dict "name" "tempo" "claim" (printf "storage-%s-tempo-0" $rel) "size" .Values.tempo.persistence.size) }}
+{{- end }}
+{{- if and .Values.grafana.enabled .Values.grafana.persistence.enabled }}
+{{- $volumes = append $volumes (dict "name" "grafana" "claim" (printf "%s-grafana" $rel) "size" .Values.grafana.persistence.size) }}
+{{- end }}
+{{- range $v := $volumes }}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  # cluster-scoped, so the namespace is part of the name
+  name: {{ $rel }}-{{ $.Release.Namespace }}-{{ $v.name }}
+  labels:
+    {{- include "webshop.labels" (dict "root" $ "component" $v.name) | nindent 4 }}
+  annotations:
+    # helm uninstall leaves the volume (and its data) alone; delete it
+    # deliberately (README, "Cleanup").
+    helm.sh/resource-policy: keep
+spec:
+  capacity:
+    storage: {{ $v.size }}
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ $l.storageClassName }}
+  volumeMode: Filesystem
+  claimRef:
+    namespace: {{ $.Release.Namespace }}
+    name: {{ $v.claim }}
+  local:
+    path: {{ $l.basePath }}/{{ $v.name }}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: [{{ $l.nodeName | quote }}]
+{{- end }}
+{{- end }}

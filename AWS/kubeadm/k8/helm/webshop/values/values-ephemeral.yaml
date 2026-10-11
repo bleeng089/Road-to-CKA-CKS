@@ -1,0 +1,23 @@
+# Overlay: no persistent storage at all (emptyDir everywhere). For a quick,
+# throwaway try - every pod restart loses its data. Use on top of a profile:
+#
+#   helm upgrade --install webshop ./chart -n webshop --create-namespace -f values/values-aws.yaml -f values/values-ephemeral.yaml --set image.repository=<your-user>/webshop
+#
+# (The subcharts manage their own volumes, so each one is switched off here
+# explicitly; storage.mode only covers the webshop chart's own components.)
+storage:
+  mode: ephemeral
+prometheus:
+  server:
+    persistentVolume:
+      enabled: false
+loki:
+  singleBinary:
+    persistence:
+      enabled: false
+tempo:
+  persistence:
+    enabled: false
+grafana:
+  persistence:
+    enabled: false

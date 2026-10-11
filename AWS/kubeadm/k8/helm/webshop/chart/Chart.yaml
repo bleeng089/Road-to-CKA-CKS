@@ -1,0 +1,44 @@
+apiVersion: v2
+name: webshop
+description: >-
+  Webshop observability lab: a small order-processing system (storefront,
+  checkout, inventory, payment simulator, fulfillment worker, synthetic
+  client) with PostgreSQL, RabbitMQ, and an OpenTelemetry Collector,
+  Prometheus, Loki, Tempo and Grafana stack - or connections to existing ones.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.29.0-0"
+keywords: [observability, opentelemetry, prometheus, loki, tempo, grafana, lab]
+
+# `helm dependency build ./chart` fetches these into chart/charts/ (git-ignored)
+# exactly as pinned in Chart.lock. The first one is the local
+# ../observability chart: Collector config, Prometheus config and rules,
+# Grafana provisioning and dashboards.
+dependencies:
+  - name: webshop-observability
+    alias: observability
+    version: 0.1.0
+    repository: file://../observability
+    condition: observability.enabled
+  - name: opentelemetry-collector
+    alias: collector
+    version: 0.175.0
+    repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+    condition: collector.enabled
+  - name: prometheus
+    version: 29.35.0
+    repository: https://prometheus-community.github.io/helm-charts
+    condition: prometheus.enabled
+  - name: loki
+    version: 18.13.7
+    repository: https://grafana-community.github.io/helm-charts
+    condition: loki.enabled
+  - name: tempo
+    version: 3.1.0
+    repository: https://grafana-community.github.io/helm-charts
+    condition: tempo.enabled
+  - name: grafana
+    version: 13.2.7
+    repository: https://grafana-community.github.io/helm-charts
+    condition: grafana.enabled

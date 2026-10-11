@@ -8,6 +8,12 @@ The networking lesson answers *how does a packet get there*. This one answers
 *how do you know the manifests you are about to apply are the ones you
 published*.
 
+> **Also in this directory:** [`webshop/`](webshop/README.md) is a separate,
+> larger project - an OpenTelemetry-instrumented webshop chart with
+> Prometheus, Loki, Tempo and Grafana, and repeatable incident exercises
+> diagnosed from telemetry alone. It has its own chart, commands, and
+> walkthrough; nothing below depends on it.
+
 ```text
    ./app  ──helm package --sign──>  app-1.0.1.tgz
                                     app-1.0.1.tgz.prov   (GPG signature +

@@ -1,0 +1,19 @@
+[project]
+name = "webshop"
+version = "0.1.0"
+description = "Webshop observability lab: services, worker, synthetic client, and lab fault controller"
+requires-python = ">=3.12"
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.in"] }
+
+[tool.setuptools.packages.find]
+include = ["webshop*"]
+
+[tool.setuptools.package-data]
+webshop = ["schema.sql", "services/static/*"]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"

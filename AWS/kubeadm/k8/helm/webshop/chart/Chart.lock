@@ -1,0 +1,21 @@
+dependencies:
+- name: webshop-observability
+  repository: file://../observability
+  version: 0.1.0
+- name: opentelemetry-collector
+  repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+  version: 0.175.0
+- name: prometheus
+  repository: https://prometheus-community.github.io/helm-charts
+  version: 29.35.0
+- name: loki
+  repository: https://grafana-community.github.io/helm-charts
+  version: 18.13.7
+- name: tempo
+  repository: https://grafana-community.github.io/helm-charts
+  version: 3.1.0
+- name: grafana
+  repository: https://grafana-community.github.io/helm-charts
+  version: 13.2.7
+digest: sha256:cc27b8271aca5cadeb65634299f9732066744af672128e333813928894295c1e
+generated: "2026-10-04T14:14:30.63227177-05:00"

@@ -1,0 +1,31 @@
+Webshop {{ .Chart.AppVersion }} is installing as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Watch it come up (first install: ~3-5 minutes):
+
+  kubectl -n {{ .Release.Namespace }} get pods -w
+
+Open the shop and Grafana (each in its own terminal):
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-storefront 8080:80
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-grafana 3000:80
+
+  http://localhost:8080   the webshop
+  http://localhost:3000   Grafana (anonymous Editor; dashboards in the "Webshop" folder)
+
+Verify a real journey end to end, then the whole telemetry path:
+
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }} --logs
+  python tools/lab.py verify
+
+Exercises (faults are off until you set them):
+
+  python tools/lab.py fault list
+{{- if not .Values.networkPolicy.enabled }}
+
+WARNING: networkPolicy.enabled=false - every pod can reach every other pod.
+{{- end }}
+{{- if eq .Values.storage.mode "localPV" }}
+
+Storage: local PersistentVolumes under {{ .Values.storage.localPV.basePath }} on node "{{ .Values.storage.localPV.nodeName }}".
+Pods stay Pending until those directories exist (README, "Storage").
+{{- end }}

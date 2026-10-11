@@ -1,0 +1,134 @@
+# Prometheus configuration for the webshop lab (Helm-templated; see
+# templates/prometheus-config.yaml). Every job is restricted to the release
+# namespace - this Prometheus watches the webshop, not the whole cluster.
+{{- $ns := .Release.Namespace }}
+{{- $rel := .Release.Name }}
+global:
+  scrape_interval: {{ .Values.prometheus.scrapeInterval }}
+  evaluation_interval: {{ .Values.prometheus.scrapeInterval }}
+  external_labels:
+    cluster: {{ .Values.global.webshop.clusterName | quote }}
+
+rule_files:
+  - /etc/config/webshop-alerts.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: [localhost:9090]
+
+  # Application metrics: app -> OTLP -> Collector -> Prometheus exporter.
+  # One target per Collector POD, never the load-balanced Service: each
+  # Collector replica holds different series, and scraping a Service would
+  # alternate between them. honor_labels keeps the exporter's job
+  # (service.namespace/service.name) and instance (service.instance.id).
+  - job_name: webshop-otlp
+    honor_labels: true
+    {{- include "webshop-observability.podsd" (dict "ns" $ns) }}
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_instance, __meta_kubernetes_pod_label_app_kubernetes_io_name]
+        regex: {{ $rel }};collector
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        regex: "8889"
+        action: keep
+
+  # The Collector's own telemetry (accepted / refused / sent / failed).
+  - job_name: otel-collector
+    {{- include "webshop-observability.podsd" (dict "ns" $ns) }}
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_instance, __meta_kubernetes_pod_label_app_kubernetes_io_name]
+        regex: {{ $rel }};collector
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        regex: "8888"
+        action: keep
+      {{- include "webshop-observability.podlabels" . }}
+
+  # Kubernetes object state: restarts, readiness, replicas, HPA, termination reasons.
+  - job_name: kube-state-metrics
+    {{- include "webshop-observability.podsd" (dict "ns" $ns) }}
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name, __meta_kubernetes_pod_container_port_name]
+        regex: kube-state-metrics;http
+        action: keep
+
+  # Container CPU, throttling and memory from cAdvisor, straight from each
+  # node's kubelet (:10250). Authorised with the nodes/metrics permission
+  # only - the API server's node proxy would need nodes/proxy, which also
+  # unlocks the kubelet's exec API. kubeadm's kubelet serving certificate is
+  # self-signed, hence insecure_skip_verify (the token is still verified by
+  # the kubelet).
+  - job_name: kubernetes-cadvisor
+    scheme: https
+    metrics_path: /metrics/cadvisor
+    tls_config:
+      insecure_skip_verify: {{ .Values.prometheus.kubeletInsecureSkipVerify }}
+    authorization:
+      credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_node_name]
+        target_label: node
+    metric_relabel_configs:
+      - source_labels: [namespace]
+        regex: {{ $ns }}
+        action: keep
+      - source_labels: [__name__]
+        regex: container_(cpu_usage_seconds_total|cpu_cfs_periods_total|cpu_cfs_throttled_periods_total|cpu_cfs_throttled_seconds_total|memory_working_set_bytes|memory_rss|oom_events_total|spec_cpu_quota|spec_cpu_period|spec_memory_limit_bytes|network_receive_bytes_total|network_transmit_bytes_total)
+        action: keep
+
+  # Node-level CPU and memory (the whole node, every namespace): is the node
+  # itself saturated, or only one container's limit?
+  - job_name: kubernetes-node-resource
+    scheme: https
+    metrics_path: /metrics/resource
+    tls_config:
+      insecure_skip_verify: {{ .Values.prometheus.kubeletInsecureSkipVerify }}
+    authorization:
+      credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_node_name]
+        target_label: node
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: node_(cpu_usage_seconds_total|memory_working_set_bytes)
+        action: keep
+
+  # PostgreSQL server-side view (postgres_exporter sidecar): connections by
+  # state, transactions, locks - the database's side of a pool problem.
+  - job_name: postgresql
+    {{- include "webshop-observability.podsd" (dict "ns" $ns) }}
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_instance, __meta_kubernetes_pod_label_app_kubernetes_io_component, __meta_kubernetes_pod_container_port_name]
+        regex: {{ $rel }};postgresql;metrics
+        action: keep
+      {{- include "webshop-observability.podlabels" . }}
+
+  # RabbitMQ built-in Prometheus plugin, per-queue detail: depth (ready /
+  # unacked), consumers, and the head message timestamp (oldest-message age,
+  # measured by the broker, independent of the application).
+  - job_name: rabbitmq
+    metrics_path: /metrics/detailed
+    params:
+      family: [queue_coarse_metrics, queue_metrics, queue_consumer_count, connection_coarse_metrics]
+    {{- include "webshop-observability.podsd" (dict "ns" $ns) }}
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_instance, __meta_kubernetes_pod_label_app_kubernetes_io_component, __meta_kubernetes_pod_container_port_name]
+        regex: {{ $rel }};rabbitmq;prometheus
+        action: keep
+      {{- include "webshop-observability.podlabels" . }}
+
+  # Telemetry backends watch themselves too: ingestion and discard counters.
+  {{- range $job := list (dict "name" "loki" "port" "3100") (dict "name" "tempo" "port" "3200") (dict "name" "grafana" "port" "3000") }}
+  - job_name: {{ $job.name }}
+    {{- include "webshop-observability.podsd" (dict "ns" $ns) }}
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name, __meta_kubernetes_pod_container_port_number]
+        regex: {{ $job.name }};{{ $job.port }}
+        action: keep
+      {{- include "webshop-observability.podlabels" $ }}
+  {{- end }}

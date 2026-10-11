@@ -1,0 +1,872 @@
+{
+ "uid": "webshop-kubernetes",
+ "title": "Webshop / Kubernetes and scaling",
+ "description": "CPU, memory, throttling, restarts, readiness, replicas, HPA, events.",
+ "tags": [
+  "webshop"
+ ],
+ "timezone": "browser",
+ "editable": true,
+ "graphTooltip": 1,
+ "schemaVersion": 41,
+ "version": 1,
+ "refresh": "30s",
+ "time": {
+  "from": "now-30m",
+  "to": "now"
+ },
+ "fiscalYearStartMonth": 0,
+ "liveNow": false,
+ "templating": {
+  "list": [
+   {
+    "name": "namespace",
+    "label": "namespace",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "query": {
+     "query": "label_values(kube_pod_info, namespace)",
+     "refId": "var-namespace"
+    },
+    "definition": "label_values(kube_pod_info, namespace)",
+    "refresh": 2,
+    "includeAll": true,
+    "multi": true,
+    "allValue": ".*",
+    "sort": 1,
+    "current": {
+     "selected": true,
+     "text": [
+      "All"
+     ],
+     "value": [
+      "$__all"
+     ]
+    }
+   }
+  ]
+ },
+ "annotations": {
+  "list": []
+ },
+ "links": [
+  {
+   "type": "dashboards",
+   "tags": [
+    "webshop"
+   ],
+   "asDropdown": true,
+   "title": "Webshop dashboards",
+   "includeVars": false,
+   "keepTime": true
+  }
+ ],
+ "panels": [
+  {
+   "type": "row",
+   "title": "Resources against requests and limits",
+   "collapsed": false,
+   "panels": [],
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 1
+   },
+   "id": 1
+  },
+  {
+   "type": "timeseries",
+   "title": "CPU usage by pod (cores)",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", container!=\"\", container!=\"POD\"}[$__rate_interval]))",
+     "legendFormat": "{{pod}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 1,
+    "w": 12,
+    "h": 8
+   },
+   "id": 2
+  },
+  {
+   "type": "timeseries",
+   "title": "Memory working set by pod",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=~\"$namespace\", container!=\"\", container!=\"POD\"})",
+     "legendFormat": "{{pod}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 1,
+    "w": 12,
+    "h": 8
+   },
+   "id": 3
+  },
+  {
+   "type": "table",
+   "title": "Requests and limits per container",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (pod, container, resource, unit) (kube_pod_container_resource_requests{namespace=~\"$namespace\"})",
+     "legendFormat": "__auto",
+     "refId": "A",
+     "range": false,
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "unit": true,
+       "Time": true
+      },
+      "renameByName": {
+       "Value": "request"
+      }
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "showHeader": true
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 9,
+    "w": 12,
+    "h": 8
+   },
+   "id": 4
+  },
+  {
+   "type": "timeseries",
+   "title": "CPU throttling by container",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (pod, container) (rate(container_cpu_cfs_throttled_periods_total{namespace=~\"$namespace\", container!=\"\"}[$__rate_interval])) / sum by (pod, container) (rate(container_cpu_cfs_periods_total{namespace=~\"$namespace\", container!=\"\"}[$__rate_interval]))",
+     "legendFormat": "{{pod}}/{{container}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 9,
+    "w": 12,
+    "h": 8
+   },
+   "id": 5
+  },
+  {
+   "type": "row",
+   "title": "Health: restarts, readiness, terminations",
+   "collapsed": false,
+   "panels": [],
+   "gridPos": {
+    "x": 0,
+    "y": 17,
+    "w": 24,
+    "h": 1
+   },
+   "id": 6
+  },
+  {
+   "type": "timeseries",
+   "title": "Container restarts (increase over 5m)",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\"}[5m]))",
+     "legendFormat": "{{pod}}/{{container}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 18,
+    "w": 8,
+    "h": 8
+   },
+   "id": 7
+  },
+  {
+   "type": "timeseries",
+   "title": "Pods not ready",
+   "description": "A pod listed here is out of its Service's endpoints.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (pod) (kube_pod_status_ready{namespace=~\"$namespace\", condition=\"false\"}) > 0",
+     "legendFormat": "{{pod}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 18,
+    "w": 8,
+    "h": 8
+   },
+   "id": 8
+  },
+  {
+   "type": "table",
+   "title": "Last termination reason (any restart since the pod started)",
+   "description": "OOMKilled = memory limit; Error = the process exited non-zero.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (pod, container, reason) (kube_pod_container_status_last_terminated_reason{namespace=~\"$namespace\"}) == 1",
+     "legendFormat": "__auto",
+     "refId": "A",
+     "range": false,
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Value": true,
+       "Time": true
+      },
+      "renameByName": {}
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "showHeader": true
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 18,
+    "w": 8,
+    "h": 8
+   },
+   "id": 9
+  },
+  {
+   "type": "row",
+   "title": "Replicas and autoscaling",
+   "collapsed": false,
+   "panels": [],
+   "gridPos": {
+    "x": 0,
+    "y": 26,
+    "w": 24,
+    "h": 1
+   },
+   "id": 10
+  },
+  {
+   "type": "timeseries",
+   "title": "HPA: desired vs current replicas",
+   "description": "desired > current for long = the scheduler cannot place the new pods (see Pending pods).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (horizontalpodautoscaler) (kube_horizontalpodautoscaler_status_desired_replicas{namespace=~\"$namespace\"})",
+     "legendFormat": "desired {{horizontalpodautoscaler}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (horizontalpodautoscaler) (kube_horizontalpodautoscaler_status_current_replicas{namespace=~\"$namespace\"})",
+     "legendFormat": "current {{horizontalpodautoscaler}}",
+     "refId": "B",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (horizontalpodautoscaler) (kube_horizontalpodautoscaler_spec_max_replicas{namespace=~\"$namespace\"})",
+     "legendFormat": "max {{horizontalpodautoscaler}}",
+     "refId": "C",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 27,
+    "w": 12,
+    "h": 8
+   },
+   "id": 11
+  },
+  {
+   "type": "timeseries",
+   "title": "Deployment replicas: available vs desired",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (deployment) (kube_deployment_status_replicas_available{namespace=~\"$namespace\"})",
+     "legendFormat": "available {{deployment}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (deployment) (kube_deployment_spec_replicas{namespace=~\"$namespace\"})",
+     "legendFormat": "desired {{deployment}}",
+     "refId": "B",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 27,
+    "w": 12,
+    "h": 8
+   },
+   "id": 12
+  },
+  {
+   "type": "timeseries",
+   "title": "Pending pods",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (pod) (kube_pod_status_phase{namespace=~\"$namespace\", phase=\"Pending\"}) > 0",
+     "legendFormat": "{{pod}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 35,
+    "w": 8,
+    "h": 7
+   },
+   "id": 13
+  },
+  {
+   "type": "timeseries",
+   "title": "HPA observed CPU utilisation (% of request)",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (horizontalpodautoscaler) (kube_horizontalpodautoscaler_status_target_metric{namespace=~\"$namespace\", metric_name=\"cpu\", metric_target_type=\"utilization\"})",
+     "legendFormat": "{{horizontalpodautoscaler}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 35,
+    "w": 8,
+    "h": 7
+   },
+   "id": 14
+  },
+  {
+   "type": "timeseries",
+   "title": "Node CPU used / allocatable",
+   "description": "All pods on the node, every namespace: is the node itself out of CPU?",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (node) (rate(node_cpu_usage_seconds_total[$__rate_interval])) / sum by (node) (kube_node_status_allocatable{resource=\"cpu\"})",
+     "legendFormat": "{{node}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "thresholdsStyle": {
+       "mode": "line"
+      }
+     },
+     "min": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "transparent",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 0.85
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 35,
+    "w": 8,
+    "h": 7
+   },
+   "id": 15
+  },
+  {
+   "type": "logs",
+   "title": "Kubernetes events (this namespace)",
+   "description": "Scheduling failures, probe failures, OOM kills, HPA rescales, image pulls.",
+   "datasource": {
+    "type": "loki",
+    "uid": "loki"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "loki",
+      "uid": "loki"
+     },
+     "expr": "{service_name=\"kubernetes-events\"}",
+     "refId": "A",
+     "queryType": "range"
+    }
+   ],
+   "options": {
+    "showTime": true,
+    "wrapLogMessage": true,
+    "enableLogDetails": true,
+    "sortOrder": "Descending",
+    "dedupStrategy": "none",
+    "prettifyLogMessage": false
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 42,
+    "w": 24,
+    "h": 9
+   },
+   "id": 16
+  }
+ ]
+}

@@ -1,0 +1,41 @@
+# Non-secret settings for every component, read as environment variables.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  labels:
+    {{- include "webshop.labels" (dict "root" . "component" "config") | nindent 4 }}
+data:
+  WEBSHOP_ENVIRONMENT: {{ .Values.global.webshop.environment | quote }}
+  WEBSHOP_LOG_LEVEL: {{ .Values.app.logLevel | quote }}
+  PGHOST: {{ include "webshop.pgHost" . | quote }}
+  PGPORT: {{ ternary 5432 .Values.postgresql.external.port .Values.postgresql.enabled | quote }}
+  PGDATABASE: {{ .Values.postgresql.database | quote }}
+  PGUSER: {{ .Values.postgresql.username | quote }}
+  AMQP_HOST: {{ include "webshop.amqpHost" . | quote }}
+  AMQP_PORT: {{ ternary 5672 .Values.rabbitmq.external.port .Values.rabbitmq.enabled | quote }}
+  AMQP_USER: {{ .Values.rabbitmq.username | quote }}
+  AMQP_VHOST: {{ ternary "/" .Values.rabbitmq.external.vhost .Values.rabbitmq.enabled | quote }}
+  STOREFRONT_URL: "http://{{ include "webshop.fqdn" (dict "root" . "component" "storefront") }}"
+  CHECKOUT_URL: "http://{{ include "webshop.fqdn" (dict "root" . "component" "checkout") }}"
+  INVENTORY_URL: "http://{{ include "webshop.fqdn" (dict "root" . "component" "inventory") }}"
+  PAYMENT_URL: "http://{{ include "webshop.fqdn" (dict "root" . "component" "payment") }}"
+  LABCONTROL_URL: {{ ternary (printf "http://%s" (include "webshop.fqdn" (dict "root" . "component" "lab-control"))) "" .Values.labControl.enabled | quote }}
+  WEBSHOP_DB_POOL_MAX: {{ .Values.app.dbPoolMax | quote }}
+  WEBSHOP_DB_ACQUIRE_TIMEOUT_S: {{ .Values.app.dbAcquireTimeoutSeconds | quote }}
+  WEBSHOP_INVENTORY_TIMEOUT_S: {{ .Values.app.inventoryTimeoutSeconds | quote }}
+  WEBSHOP_INVENTORY_ATTEMPTS: {{ .Values.app.inventoryAttempts | quote }}
+  WEBSHOP_PAYMENT_TIMEOUT_S: {{ .Values.app.paymentTimeoutSeconds | quote }}
+  WEBSHOP_PAYMENT_ATTEMPTS: {{ .Values.app.paymentAttempts | quote }}
+  WEBSHOP_CHECKOUT_TIMEOUT_S: {{ .Values.app.checkoutTimeoutSeconds | quote }}
+  WEBSHOP_WORKER_CONCURRENCY: {{ .Values.app.workerConcurrency | quote }}
+  WEBSHOP_PICK_TIME_S: {{ .Values.app.pickTimeSeconds | quote }}
+  WEBSHOP_HTTP_KEEPALIVE: {{ .Values.app.httpKeepalive | quote }}
+  WEBSHOP_SYNTHETIC_RATE: {{ .Values.synthetic.ratePerSecond | quote }}
+  WEBSHOP_SYNTHETIC_DEADLINE_S: {{ .Values.synthetic.deadlineSeconds | quote }}
+  WEBSHOP_SYNTHETIC_POLL_S: {{ .Values.synthetic.pollSeconds | quote }}
+  WEBSHOP_SYNTHETIC_VALIDATION_RATIO: {{ .Values.synthetic.validationRatio | quote }}
+  WEBSHOP_SYNTHETIC_AUDIT_DELAY_S: {{ .Values.synthetic.auditDelaySeconds | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ include "webshop.otlpEndpoint" . | quote }}
+  OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+  OTEL_METRIC_EXPORT_INTERVAL: {{ .Values.otel.metricExportIntervalMs | quote }}

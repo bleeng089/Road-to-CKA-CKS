@@ -1,0 +1,216 @@
+# OpenTelemetry Collector pipeline for the webshop lab.
+#
+# Rendered by Helm (templates/collector-config.yaml) into the ConfigMap the
+# bundled opentelemetry-collector chart mounts. ${env:...} references are
+# resolved by the Collector at start-up, not by Helm.
+#
+#   apps --OTLP--> [otlp] --> memory_limiter -> k8sattributes -> resource -> batch
+#                     traces  --> Tempo (OTLP/gRPC)          + servicegraph connector
+#                     metrics --> Prometheus exporter :8889  (scraped per Collector pod)
+#                     logs    --> Loki native OTLP (/otlp)
+#   k8s API --[k8sobjects: events]--> transform -> Loki   (a separate logs pipeline)
+#
+# There is no filelog receiver: application logs arrive once, over OTLP.
+# Adding one later? Exclude the webshop app containers, or every record
+# reaches Loki twice.
+{{- $o := .Values.collector }}
+{{- $ns := .Release.Namespace }}
+{{- $tracesEndpoint := $o.traces.endpoint | default (printf "%s-tempo:4317" .Release.Name) }}
+{{- $logsEndpoint := $o.logs.endpoint | default (printf "http://%s-loki:3100/otlp" .Release.Name) }}
+
+extensions:
+  health_check:
+    endpoint: ${env:MY_POD_IP}:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: ${env:MY_POD_IP}:4317
+      http:
+        endpoint: ${env:MY_POD_IP}:4318
+  {{- if $o.kubernetesEvents }}
+  k8sobjects:
+    auth_type: serviceAccount
+    objects:
+      - name: events
+        group: events.k8s.io
+        mode: watch
+        namespaces: [{{ $ns }}]
+  {{- end }}
+
+processors:
+  # First in every pipeline: refuse data (the SDKs retry) instead of being
+  # OOM-killed when a backend stalls and the queues fill up.
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+
+  # Enrichment from the Kubernetes API. Pods also send their identity
+  # (k8s.pod.uid via the Downward API); that is how the processor finds the
+  # pod even when the connection is NATed. Scoped to this namespace, so a
+  # namespaced Role is enough RBAC.
+  k8sattributes:
+    auth_type: serviceAccount
+    passthrough: false
+    filter:
+      namespace: {{ $ns }}
+    pod_association:
+      - sources: [{from: resource_attribute, name: k8s.pod.uid}]
+      - sources: [{from: resource_attribute, name: k8s.pod.name}]
+      - sources: [{from: connection}]
+    extract:
+      metadata:
+        - k8s.deployment.name
+        - k8s.replicaset.name
+        - k8s.node.name
+        - k8s.pod.start_time
+      labels:
+        - {tag_name: app.kubernetes.io/component, key: app.kubernetes.io/component, from: pod}
+
+  resource/cluster:
+    attributes:
+      - {key: k8s.cluster.name, value: {{ .Values.global.webshop.clusterName | quote }}, action: upsert}
+
+  # Every resource attribute becomes a Prometheus label on every series
+  # (resource_to_telemetry_conversion below). Keep the useful, bounded ones;
+  # identifiers such as k8s.pod.uid would only multiply series.
+  transform/metric-resources:
+    error_mode: ignore
+    metric_statements:
+      - context: resource
+        statements:
+          - keep_keys(attributes, [{{ range $i, $k := $o.metricResourceAttributes }}{{ if $i }}, {{ end }}"{{ $k }}"{{ end }}])
+
+  {{- if $o.kubernetesEvents }}
+  # Turn the raw watch event into a readable log record with filterable
+  # attributes (reason, type, object) - they land in Loki structured metadata.
+  transform/events:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          - set(attributes["k8s.event.reason"], body["object"]["reason"])
+          - set(attributes["k8s.event.type"], body["object"]["type"])
+          - set(attributes["k8s.event.action"], body["object"]["action"])
+          - set(attributes["k8s.object.kind"], body["object"]["regarding"]["kind"])
+          - set(attributes["k8s.object.name"], body["object"]["regarding"]["name"])
+          - set(severity_text, "WARN") where body["object"]["type"] == "Warning"
+          - set(severity_text, "INFO") where body["object"]["type"] == "Normal"
+          - set(body, Concat([body["object"]["reason"], body["object"]["regarding"]["kind"], body["object"]["regarding"]["name"], body["object"]["note"]], " "))
+  resource/events:
+    attributes:
+      - {key: service.name, value: kubernetes-events, action: upsert}
+      - {key: service.namespace, value: webshop, action: upsert}
+      - {key: k8s.namespace.name, value: {{ $ns }}, action: upsert}
+      - {key: deployment.environment.name, value: {{ .Values.global.webshop.environment | quote }}, action: upsert}
+  {{- end }}
+
+  batch:
+    send_batch_size: 1024
+    timeout: 2s
+
+{{- if $o.serviceGraph }}
+connectors:
+  # Builds request/failure/latency metrics per client->server edge from
+  # span pairs, plus virtual nodes for PostgreSQL and RabbitMQ.
+  servicegraph:
+    latency_histogram_buckets: [5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2s, 5s, 10s]
+    dimensions: []
+    store:
+      ttl: 10s
+      max_items: 5000
+    virtual_node_peer_attributes: [db.system.name, messaging.system, server.address]
+    metrics_flush_interval: 15s
+{{- end }}
+
+exporters:
+  otlp/traces:
+    endpoint: {{ $tracesEndpoint }}
+    tls:
+      insecure: {{ $o.traces.insecure }}
+    {{- with $o.traces.headersFromEnv }}
+    headers:
+      {{- range $k, $v := . }}
+      {{ $k }}: "${env:{{ $v }}}"
+      {{- end }}
+    {{- end }}
+    sending_queue:
+      queue_size: 2000
+    retry_on_failure:
+      max_elapsed_time: 120s
+
+  otlphttp/logs:
+    endpoint: {{ $logsEndpoint }}
+    {{- with $o.logs.headersFromEnv }}
+    headers:
+      {{- range $k, $v := . }}
+      {{ $k }}: "${env:{{ $v }}}"
+      {{- end }}
+    {{- end }}
+    sending_queue:
+      queue_size: 2000
+    retry_on_failure:
+      max_elapsed_time: 120s
+
+  {{- if eq $o.metrics.mode "prometheusExporter" }}
+  # Scraped by Prometheus, one target per Collector pod. job/instance on each
+  # series come from service.namespace/service.name and service.instance.id
+  # (the pod name), so replicas never collide; the scrape uses honor_labels.
+  # OpenMetrics is what carries exemplars (trace_id/span_id) to Prometheus.
+  prometheus:
+    endpoint: ${env:MY_POD_IP}:8889
+    enable_open_metrics: true
+    resource_to_telemetry_conversion:
+      enabled: true
+    metric_expiration: 5m
+  {{- else }}
+  otlphttp/metrics:
+    metrics_endpoint: {{ required "observability.collector.metrics.otlpEndpoint is required when mode is otlpHttp" $o.metrics.otlpEndpoint }}
+    {{- with $o.metrics.headersFromEnv }}
+    headers:
+      {{- range $k, $v := . }}
+      {{ $k }}: "${env:{{ $v }}}"
+      {{- end }}
+    {{- end }}
+  {{- end }}
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: info
+    # The Collector's own health: accepted/refused/sent/failed per component,
+    # queue sizes. Scraped by Prometheus from :8888 on every Collector pod.
+    metrics:
+      level: normal
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: ${env:MY_POD_IP}
+                port: 8888
+                # conventional Prometheus names (otelcol_..._total, ..._bytes);
+                # without these the 0.161 defaults drop the suffixes
+                without_type_suffix: false
+                without_units: false
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, k8sattributes, resource/cluster, batch]
+      exporters: [otlp/traces{{ if $o.serviceGraph }}, servicegraph{{ end }}]
+    metrics:
+      receivers: [otlp{{ if $o.serviceGraph }}, servicegraph{{ end }}]
+      processors: [memory_limiter, k8sattributes, resource/cluster, transform/metric-resources, batch]
+      exporters: [{{ if eq $o.metrics.mode "prometheusExporter" }}prometheus{{ else }}otlphttp/metrics{{ end }}]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, k8sattributes, resource/cluster, batch]
+      exporters: [otlphttp/logs]
+    {{- if $o.kubernetesEvents }}
+    logs/kubernetes-events:
+      receivers: [k8sobjects]
+      processors: [memory_limiter, transform/events, resource/events, batch]
+      exporters: [otlphttp/logs]
+    {{- end }}

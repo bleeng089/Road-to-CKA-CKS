@@ -1,0 +1,68 @@
+# Values for the webshop-observability subchart. In the webshop chart these
+# live under the `observability:` key; shared settings (environment, cluster
+# name) come from `global.webshop`.
+
+collector:
+  # Render the Collector configuration ConfigMap (<release>-collector-config)
+  # that the bundled opentelemetry-collector chart mounts.
+  config: true
+  # Where each signal goes. Empty endpoints mean "the backends installed by
+  # this release". For an existing stack see values/values-existing-backends.yaml.
+  traces:
+    endpoint: ""            # OTLP/gRPC host:port. Default: <release>-tempo:4317
+    insecure: true
+    headersFromEnv: {}      # e.g. {authorization: TRACES_AUTH} -> "${env:TRACES_AUTH}"
+  logs:
+    endpoint: ""            # OTLP/HTTP base URL. Default: http://<release>-loki:3100/otlp
+    headersFromEnv: {}
+  metrics:
+    # prometheusExporter: the Collector exposes /metrics and Prometheus scrapes
+    #   each Collector pod (the lab default; supports exemplars).
+    # otlpHttp: the Collector pushes to a Prometheus OTLP receiver
+    #   (--web.enable-otlp-receiver) or any OTLP metrics endpoint.
+    mode: prometheusExporter
+    otlpEndpoint: ""
+    headersFromEnv: {}
+  # Kubernetes events from this namespace, as log records in Loki.
+  kubernetesEvents: true
+  # Service-graph metrics derived from spans (Grafana's Tempo service map).
+  serviceGraph: true
+  # Resource attributes promoted to Prometheus labels on every application
+  # series. Everything not listed is dropped from metrics (it remains on
+  # spans and logs, and in target_info).
+  metricResourceAttributes:
+    - service.name
+    - service.namespace
+    - service.version
+    - service.instance.id
+    - deployment.environment.name
+    - k8s.namespace.name
+    - k8s.pod.name
+    - k8s.node.name
+    - k8s.deployment.name
+    - webshop.config.revision
+
+prometheus:
+  # Render <release>-prometheus-config (scrape config + alert rules) for the
+  # bundled Prometheus (server.configMapOverrideName: prometheus-config).
+  config: true
+  scrapeInterval: 15s
+  # The kubelet's serving certificate is self-signed on kubeadm clusters
+  # (unless serverTLSBootstrap is enabled), so it cannot be verified.
+  kubeletInsecureSkipVerify: true
+
+grafana:
+  datasources: true
+  dashboards: true
+  # Data source URLs. Empty = the in-release services.
+  urls:
+    prometheus: ""
+    loki: ""
+    tempo: ""
+
+alerts:
+  enabled: true
+  sloTarget: 0.99            # illustrative 99% journey SLO
+  # Burn-rate windows sized for a lab session; production would use the
+  # 1h/5m and 6h/30m pairs from the SRE workbook.
+  fastBurn: {long: 10m, short: 2m, factor: 10}

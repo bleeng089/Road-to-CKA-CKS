@@ -1,0 +1,904 @@
+{
+ "uid": "webshop-telemetry",
+ "title": "Webshop / Telemetry health",
+ "description": "Collector accepted/refused/failed, queues, SDK drops, Loki/Tempo/Prometheus ingestion.",
+ "tags": [
+  "webshop"
+ ],
+ "timezone": "browser",
+ "editable": true,
+ "graphTooltip": 1,
+ "schemaVersion": 41,
+ "version": 1,
+ "refresh": "30s",
+ "time": {
+  "from": "now-30m",
+  "to": "now"
+ },
+ "fiscalYearStartMonth": 0,
+ "liveNow": false,
+ "templating": {
+  "list": []
+ },
+ "annotations": {
+  "list": []
+ },
+ "links": [
+  {
+   "type": "dashboards",
+   "tags": [
+    "webshop"
+   ],
+   "asDropdown": true,
+   "title": "Webshop dashboards",
+   "includeVars": false,
+   "keepTime": true
+  }
+ ],
+ "panels": [
+  {
+   "type": "row",
+   "title": "Is the telemetry itself complete?",
+   "collapsed": false,
+   "panels": [],
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 1
+   },
+   "id": 1
+  },
+  {
+   "type": "table",
+   "title": "Scrape targets",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "up",
+     "legendFormat": "__auto",
+     "refId": "A",
+     "range": false,
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "__name__": true,
+       "Time": true
+      },
+      "renameByName": {
+       "Value": "up"
+      }
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "showHeader": true
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 1,
+    "w": 12,
+    "h": 8
+   },
+   "id": 2
+  },
+  {
+   "type": "timeseries",
+   "title": "Collector: accepted per signal",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(rate(otelcol_receiver_accepted_spans_total[$__rate_interval]))",
+     "legendFormat": "spans/s",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(rate(otelcol_receiver_accepted_metric_points_total[$__rate_interval]))",
+     "legendFormat": "metric points/s",
+     "refId": "B",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(rate(otelcol_receiver_accepted_log_records_total[$__rate_interval]))",
+     "legendFormat": "log records/s",
+     "refId": "C",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 1,
+    "w": 12,
+    "h": 8
+   },
+   "id": 3
+  },
+  {
+   "type": "timeseries",
+   "title": "Collector: refused by receivers (back-pressure)",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (receiver) (rate(otelcol_receiver_refused_spans_total[$__rate_interval])) or vector(0)",
+     "legendFormat": "spans {{receiver}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (receiver) (rate(otelcol_receiver_refused_metric_points_total[$__rate_interval])) or vector(0)",
+     "legendFormat": "metrics {{receiver}}",
+     "refId": "B",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (receiver) (rate(otelcol_receiver_refused_log_records_total[$__rate_interval])) or vector(0)",
+     "legendFormat": "logs {{receiver}}",
+     "refId": "C",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 9,
+    "w": 8,
+    "h": 8
+   },
+   "id": 4
+  },
+  {
+   "type": "timeseries",
+   "title": "Collector: export failures",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (exporter) (rate(otelcol_exporter_send_failed_spans_total[$__rate_interval])) or vector(0)",
+     "legendFormat": "spans {{exporter}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (exporter) (rate(otelcol_exporter_send_failed_metric_points_total[$__rate_interval])) or vector(0)",
+     "legendFormat": "metrics {{exporter}}",
+     "refId": "B",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (exporter) (rate(otelcol_exporter_send_failed_log_records_total[$__rate_interval])) or vector(0)",
+     "legendFormat": "logs {{exporter}}",
+     "refId": "C",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 9,
+    "w": 8,
+    "h": 8
+   },
+   "id": 5
+  },
+  {
+   "type": "timeseries",
+   "title": "Collector: export queue fill",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (exporter) (otelcol_exporter_queue_size / otelcol_exporter_queue_capacity)",
+     "legendFormat": "{{exporter}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "thresholdsStyle": {
+       "mode": "line"
+      }
+     },
+     "min": 0,
+     "max": 1,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "transparent",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 0.8
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 9,
+    "w": 8,
+    "h": 8
+   },
+   "id": 6
+  },
+  {
+   "type": "timeseries",
+   "title": "Applications: SDK drops and export errors",
+   "description": "Measured inside each app. Note: these ride the same pipeline, so they show partial loss; total loss shows as missing data and down targets.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (service_name, error_type) (rate(otel_sdk_processor_span_processed_total{error_type!=\"\"}[$__rate_interval])) or vector(0)",
+     "legendFormat": "span drop {{service_name}} {{error_type}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (service_name, error_type) (rate(otel_sdk_exporter_span_exported_total{error_type!=\"\"}[$__rate_interval]))",
+     "legendFormat": "span export error {{service_name}} {{error_type}}",
+     "refId": "B",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (service_name, error_type) (rate(otel_sdk_exporter_log_exported_total{error_type!=\"\"}[$__rate_interval]))",
+     "legendFormat": "log export error {{service_name}} {{error_type}}",
+     "refId": "C",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 17,
+    "w": 12,
+    "h": 8
+   },
+   "id": 7
+  },
+  {
+   "type": "timeseries",
+   "title": "Applications: spans started vs exported",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (service_name) (rate(otel_sdk_span_started_total[$__rate_interval]))",
+     "legendFormat": "started {{service_name}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (service_name) (rate(otel_sdk_exporter_span_exported_total{error_type=\"\"}[$__rate_interval]))",
+     "legendFormat": "exported {{service_name}}",
+     "refId": "B",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 17,
+    "w": 12,
+    "h": 8
+   },
+   "id": 8
+  },
+  {
+   "type": "row",
+   "title": "Backends",
+   "collapsed": false,
+   "panels": [],
+   "gridPos": {
+    "x": 0,
+    "y": 25,
+    "w": 24,
+    "h": 1
+   },
+   "id": 9
+  },
+  {
+   "type": "timeseries",
+   "title": "Loki: lines received / discarded",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(rate(loki_distributor_lines_received_total[$__rate_interval]))",
+     "legendFormat": "received/s",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (reason) (rate(loki_discarded_samples_total[$__rate_interval])) or vector(0)",
+     "legendFormat": "discarded {{reason}}",
+     "refId": "B",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 26,
+    "w": 8,
+    "h": 8
+   },
+   "id": 10
+  },
+  {
+   "type": "timeseries",
+   "title": "Tempo: spans received / discarded",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(rate(tempo_distributor_spans_received_total[$__rate_interval]))",
+     "legendFormat": "received/s",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (reason) (rate(tempo_discarded_spans_total[$__rate_interval])) or vector(0)",
+     "legendFormat": "discarded {{reason}}",
+     "refId": "B",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 26,
+    "w": 8,
+    "h": 8
+   },
+   "id": 11
+  },
+  {
+   "type": "timeseries",
+   "title": "Prometheus: head series and scrape time",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "prometheus_tsdb_head_series",
+     "legendFormat": "head series",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (job) (scrape_duration_seconds)",
+     "legendFormat": "scrape s {{job}}",
+     "refId": "B",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 26,
+    "w": 8,
+    "h": 8
+   },
+   "id": 12
+  },
+  {
+   "type": "timeseries",
+   "title": "Collector process memory",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (pod) (otelcol_process_memory_rss_bytes)",
+     "legendFormat": "{{pod}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 34,
+    "w": 12,
+    "h": 7
+   },
+   "id": 13
+  },
+  {
+   "type": "timeseries",
+   "title": "Synthetic heartbeat: journeys evaluated per second",
+   "description": "Zero here means the SLI is blind - not that everything is fine.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(rate(webshop_synthetic_journeys_total[$__rate_interval]))",
+     "legendFormat": "journeys/s",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 34,
+    "w": 12,
+    "h": 7
+   },
+   "id": 14
+  }
+ ]
+}
