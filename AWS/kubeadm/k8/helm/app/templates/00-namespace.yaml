@@ -4,6 +4,6 @@ metadata:
   name: three-tier
   labels:
     app.kubernetes.io/part-of: three-tier-lesson
-    app.kubernetes.io/release-name: {{ .Release.Name }}
+    app.kubernetes.io/release-name: {{ .Release.Name | quote }}
     app.kubernetes.io/release-revision: {{ .Release.Revision | quote }}
 
