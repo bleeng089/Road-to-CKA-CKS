@@ -1,7 +1,6 @@
 # Incident 8 - Duplicate charges (explicit safeguard bypass)
 
-> **Step 5 of 8: Incident and blind exercises** · Exercise 8 of 9 · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
-> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 7, Worker backlog](07-worker-backlog.md) · Next: [Incident 9, Network policy drop](09-policy-drop.md)
+> **Step 5 of 8: Incident and blind exercises** · Exercise 8 of 9 · Run from `AWS/kubeadm/k8/helm/webshop/` · Needs: the webshop (step 4)
 
 **Start:** `python3 tools/lab.py fault apply duplicate-charges --yes`
 
@@ -98,4 +97,4 @@ are the list of whom to refund.
 
 ---
 
-> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 7, Worker backlog](07-worker-backlog.md) · Next: [Incident 9, Network policy drop](09-policy-drop.md)
+> **Next:** [Incident 9, Network policy drop](09-policy-drop.md)

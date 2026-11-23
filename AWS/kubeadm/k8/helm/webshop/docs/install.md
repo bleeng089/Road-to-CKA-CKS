@@ -1,7 +1,6 @@
 # Installing the webshop: what each step does
 
-> **Step 4 of 8: Install the webshop**, each step explained · Run from: as in the quick start (`AWS/kubeadm/`, then `AWS/kubeadm/k8/webshop/`) · Needs: the cluster (step 1)\
-> [All steps](../../../../../README.md#learning-path) · The commands: [quick start](../README.md#quick-start-on-the-aws-lab) · Next: step 5, [Incident and blind exercises](../README.md#5-incident-exercises)
+> **Step 4 of 8: Install the webshop**, each step explained · Run from: as in the quick start (`AWS/kubeadm/`, then `AWS/kubeadm/k8/helm/webshop/`) · Needs: the cluster (step 1)
 
 The procedure is the README's
 [quick start](../README.md#quick-start-on-the-aws-lab): six steps, every
@@ -84,7 +83,7 @@ interactive shell on a node instead, which the networking track's **[on the
 worker]** steps need, run the `worker` entry of
 `terraform output session_manager_commands` (or `ssh_commands`, if you set
 `ssh_enabled = true`; see
-[AWS/kubeadm/README.md, section 8](../../../README.md#8-shell-access-to-the-nodes)).
+[AWS/kubeadm/README.md, section 8](../../../../README.md#8-shell-access-to-the-nodes)).
 
 No `chown` is needed, and it does not matter who created the directories:
 each pod sets an `fsGroup`, and the kubelet makes the local volume
@@ -260,7 +259,7 @@ values file instead of `values-aws.yaml` (the storage section of
 The quick start is written for bash or zsh. In PowerShell:
 
 - the kubeconfig: the PowerShell and cmd forms in
-  [AWS/kubeadm/README.md, section 6](../../../README.md#6-retrieve-the-kubeconfig);
+  [AWS/kubeadm/README.md, section 6](../../../../README.md#6-retrieve-the-kubeconfig);
 - a shell variable: `$NAME = ...` instead of `NAME=$(...)`;
 - Python: `py` instead of `python3`.
 
@@ -269,4 +268,4 @@ the same everywhere.
 
 ---
 
-> [All steps](../../../../../README.md#learning-path) · The commands: [quick start](../README.md#quick-start-on-the-aws-lab) · Next: step 5, [Incident and blind exercises](../README.md#5-incident-exercises)
+> **Next:** [Incident 1, Slow inventory](incidents/01-slow-inventory.md), step 5: the incident exercises

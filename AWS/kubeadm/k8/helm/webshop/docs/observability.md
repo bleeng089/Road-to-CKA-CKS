@@ -1,7 +1,6 @@
 # How the webshop is instrumented, and why
 
-> **Background for steps 5–7:** how the webshop is instrumented, and why · Reading only, nothing to run\
-> [All steps](../../../../../README.md#learning-path) · Back to the [webshop README](../README.md)
+> **Background for steps 5–7:** how the webshop is instrumented, and why · Reading only, nothing to run
 
 The test this lab sets itself: when something breaks, can you find out what,
 where, since when, and for whom - from telemetry that was **already being
@@ -422,7 +421,3 @@ At higher volume, in roughly this order:
   and 7. A production edge would drop or replace those headers for outside
   callers, and keep them off calls to third parties.
 - No real-user monitoring in the browser UI.
-
----
-
-> [All steps](../../../../../README.md#learning-path) · Back to the [webshop README](../README.md)

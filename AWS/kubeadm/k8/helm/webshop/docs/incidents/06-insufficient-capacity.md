@@ -1,7 +1,6 @@
 # Incident 6 - Insufficient capacity
 
-> **Step 5 of 8: Incident and blind exercises** · Exercise 6 of 9 · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
-> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 5, Incorrect fulfillment](05-incorrect-fulfillment.md) · Next: [Incident 7, Worker backlog](07-worker-backlog.md)
+> **Step 5 of 8: Incident and blind exercises** · Exercise 6 of 9 · Run from `AWS/kubeadm/k8/helm/webshop/` · Needs: the webshop (step 4)
 
 **Start:** `python3 tools/lab.py fault apply traffic-surge`
 **Injected (known-fault exercise):** nothing breaks. The synthetic traffic
@@ -120,4 +119,4 @@ window, one pod per minute.
 
 ---
 
-> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 5, Incorrect fulfillment](05-incorrect-fulfillment.md) · Next: [Incident 7, Worker backlog](07-worker-backlog.md)
+> **Next:** [Incident 7, Worker backlog](07-worker-backlog.md)

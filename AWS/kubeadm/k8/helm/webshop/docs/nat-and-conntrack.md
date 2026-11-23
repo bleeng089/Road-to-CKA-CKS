@@ -1,7 +1,6 @@
 # Reading NAT rules and conntrack, from first principles
 
-> **Part of step 6: Networking on the webshop**, background reading · Commands run on a node and only read · Needs: the webshop (step 4)\
-> [All steps](../../../../../README.md#learning-path) · Back to the [networking track](networking.md)
+> **Part of step 6: Networking on the webshop**, background reading · Commands run on a node and only read · Needs: the webshop (step 4)
 
 The networking track's "Under the hood" sections show kube-proxy's NAT rules
 and conntrack entries. This page explains how to read them - from what a
@@ -311,7 +310,3 @@ References:
 [iptables-extensions(8)](https://man7.org/linux/man-pages/man8/iptables-extensions.8.html) (`statistic`, `comment`, `mark`, `addrtype`),
 [conntrack(8)](https://manpages.ubuntu.com/manpages/noble/man8/conntrack.8.html),
 [nft(8)](https://manpages.ubuntu.com/manpages/noble/man8/nft.8.html).
-
----
-
-> [All steps](../../../../../README.md#learning-path) · Back to the [networking track](networking.md)

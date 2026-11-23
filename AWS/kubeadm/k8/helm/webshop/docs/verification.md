@@ -1,7 +1,6 @@
 # Verification record
 
-> **For maintainers:** the record of every check that was run; the lessons do not need it.\
-> [All steps](../../../../../README.md#learning-path) · Back to the [webshop README](../README.md)
+> **For maintainers:** the record of every check that was run; the lessons do not need it.
 
 What was checked, where, and with what result: first on a Kind cluster
 shaped like the lab, then on the AWS lab itself.
@@ -249,7 +248,3 @@ after a user pasted a block and bash read `<inventory-pod-ip>` as a redirection.
 rebuilt lab as written: the client lines in an interactive bash, the worker lines on the worker; the
 Ingress/Envoy lookups against those controllers' rule lines from the 2026-10-25 run (controllers not
 installed at the time).
-
----
-
-> [All steps](../../../../../README.md#learning-path) · Back to the [webshop README](../README.md)

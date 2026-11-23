@@ -1,7 +1,6 @@
 # Kubernetes Networking, Hands-On
 
-> **Step 2 of 8: Networking on a three-tier app** · Run from `AWS/kubeadm/k8/` · Needs: the cluster (step 1)\
-> [All steps](../../../README.md#learning-path) · Previous: step 1, [Build the cluster](../README.md) · Next: step 3, [Helm chart signing](helm/README.md)
+> **Step 2 of 8: Networking on a three-tier app** · Run from `AWS/kubeadm/k8/` · Needs: the cluster (step 1)
 
 A guided lesson on how traffic moves through a Kubernetes cluster — pod
 networking, Services, CoreDNS, ClusterIP, NodePort, Ingress, the Gateway API,
@@ -781,7 +780,7 @@ Envoy Gateway delete can take a minute — it tears down CRDs.)
 ## More to try
 
 - Run the same modules on a real system: step 6,
-  [Networking on the webshop](webshop/docs/networking.md).
+  [Networking on the webshop](helm/webshop/docs/networking.md).
 - Add `spec.tls` to the Ingress with a self-signed cert and terminate HTTPS.
 - Convert the frontend policy to only accept traffic from the ingress
   controller's namespace (`namespaceSelector`) instead of any source.
@@ -794,4 +793,4 @@ Envoy Gateway delete can take a minute — it tears down CRDs.)
 
 ---
 
-> [All steps](../../../README.md#learning-path) · Previous: step 1, [Build the cluster](../README.md) · Next: step 3, [Helm chart signing](helm/README.md)
+> **Next:** [`helm/`](helm/README.md), step 3: Helm chart signing

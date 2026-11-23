@@ -1,7 +1,6 @@
 # Incident 9 - Network policy drop
 
-> **Step 5 of 8: Incident and blind exercises** · Exercise 9 of 9 · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
-> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 8, Duplicate charges](08-duplicate-charges.md) · Next: [Blind exercises](../blind-exercises.md)
+> **Step 5 of 8: Incident and blind exercises** · Exercise 9 of 9 · Run from `AWS/kubeadm/k8/helm/webshop/` · Needs: the webshop (step 4)
 
 **Start:** `python3 tools/lab.py fault apply policy-drop`
 **Injected (known-fault exercise):** the NetworkPolicy
@@ -164,4 +163,4 @@ mistake cost 32 orders; the retry budget, not the outage, decided how many.
 
 ---
 
-> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 8, Duplicate charges](08-duplicate-charges.md) · Next: [Blind exercises](../blind-exercises.md)
+> **Next:** [Blind exercises](../blind-exercises.md), the rest of step 5

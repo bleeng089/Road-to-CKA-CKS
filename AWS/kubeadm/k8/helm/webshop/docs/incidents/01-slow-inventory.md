@@ -1,7 +1,6 @@
 # Incident 1 - Slow inventory
 
-> **Step 5 of 8: Incident and blind exercises** · Exercise 1 of 9 · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
-> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Next: [Incident 2, Exhausted database pool](02-pool-exhaustion.md)
+> **Step 5 of 8: Incident and blind exercises** · Exercise 1 of 9 · Run from `AWS/kubeadm/k8/helm/webshop/` · Needs: the webshop (step 4)
 
 **Start:** `python3 tools/lab.py fault apply slow-inventory`
 **Injected (known-fault exercise):** every stock reservation in the inventory
@@ -124,4 +123,4 @@ is the window, not the system.
 
 ---
 
-> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Next: [Incident 2, Exhausted database pool](02-pool-exhaustion.md)
+> **Next:** [Incident 2, Exhausted database pool](02-pool-exhaustion.md)

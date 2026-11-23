@@ -1,7 +1,6 @@
 # Helm, Hands-On: package, sign, publish, verify
 
-> **Step 3 of 8: Helm chart signing** · Run from `AWS/kubeadm/k8/helm/` · Needs: a registry account; the cluster only from section 9\
-> [All steps](../../../../README.md#learning-path) · Previous: step 2, [Networking on a three-tier app](../README.md) · Next: step 4, [Install the webshop](../webshop/README.md#quick-start-on-the-aws-lab)
+> **Step 3 of 8: Helm chart signing** · Run from `AWS/kubeadm/k8/helm/` · Needs: a registry account; the cluster only from section 9
 
 The same three-tier app from [`../README.md`](../README.md), rebuilt as a Helm
 chart and pushed to an OCI registry as a **signed** artifact — then pulled back
@@ -513,4 +512,4 @@ change something, release a new version rather than deleting and re-pushing.
 
 ---
 
-> [All steps](../../../../README.md#learning-path) · Previous: step 2, [Networking on a three-tier app](../README.md) · Next: step 4, [Install the webshop](../webshop/README.md#quick-start-on-the-aws-lab)
+> **Next:** [`webshop/`](webshop/README.md), step 4: install the webshop

@@ -1,7 +1,6 @@
 # Webshop observability lab: diagnose incidents from telemetry you already have
 
-> **Steps 4–7 of 8: the webshop** · Run from `AWS/kubeadm/k8/webshop/` (the quick start begins in `AWS/kubeadm/`) · Needs: the cluster (step 1)\
-> [All steps](../../../../README.md#learning-path) · Steps here: 4 [Install the webshop](#quick-start-on-the-aws-lab) · 5 [Incident and blind exercises](#5-incident-exercises) · 6 [Networking on the webshop](docs/networking.md) · 7 [OpenTelemetry](docs/opentelemetry.md)
+> **Steps 4–7 of 8: the webshop** · Run from `AWS/kubeadm/k8/helm/webshop/` (the quick start begins in `AWS/kubeadm/`) · Needs: the cluster (step 1)
 
 > An application is properly instrumented when developers can troubleshoot an
 > incident using telemetry already collected, without adding instrumentation
@@ -14,7 +13,7 @@ in eight repeatable ways (plus one deliberate safeguard bypass). You diagnose
 each break in Grafana - first with a walkthrough, then blind, with the
 instrumentation frozen.
 
-It is a sibling of the signed `app` chart in [`../helm/`](../helm/README.md): same
+It is a sibling of the signed `app` chart in [`../`](../README.md): same
 cluster, same Helm, different question. The networking lessons ask *how does
 a packet get there*; this one asks *how do you know what your users got*.
 
@@ -76,7 +75,7 @@ private registry, a throwaway install, Windows). Every block runs as pasted,
 top to bottom, in **one terminal** (bash or zsh on macOS/Linux): nothing to
 fill in, and each step waits until the cluster is actually ready for the next.
 For Windows, see the variants in section 1 and in
-[AWS/kubeadm/README.md, section 6](../../README.md#6-retrieve-the-kubeconfig).
+[AWS/kubeadm/README.md, section 6](../../../README.md#6-retrieve-the-kubeconfig).
 
 **1. Point kubectl at the lab.** From the repository root, after
 `terraform apply` has finished:
@@ -118,7 +117,7 @@ Expect CPU and memory figures for `master` and `worker`.
 every later command runs from there:
 
 ```text
-cd k8/webshop
+cd k8/helm/webshop
 helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo add grafana-community https://grafana-community.github.io/helm-charts
@@ -159,12 +158,12 @@ Open two, `cd` to this `webshop/` directory in each, and run one block in
 each:
 
 ```text
-export KUBECONFIG="$PWD/../../kubeadm-lab.kubeconfig"
+export KUBECONFIG="$PWD/../../../kubeadm-lab.kubeconfig"
 kubectl -n webshop port-forward svc/webshop-storefront 8080:80
 ```
 
 ```text
-export KUBECONFIG="$PWD/../../kubeadm-lab.kubeconfig"
+export KUBECONFIG="$PWD/../../../kubeadm-lab.kubeconfig"
 kubectl -n webshop port-forward svc/webshop-grafana 3000:80
 ```
 
@@ -199,7 +198,7 @@ limitations): [docs/reference.md](docs/reference.md).
 
 ## 1. Prerequisites
 
-**A running AWS kubeadm lab.** Build it with [`AWS/kubeadm/`](../../README.md)
+**A running AWS kubeadm lab.** Build it with [`AWS/kubeadm/`](../../../README.md)
 (sections 1-7: `terraform apply`, wait for both nodes `ready`, fetch the
 kubeconfig) and point `KUBECONFIG` at the file exactly as that README shows.
 This lesson never touches the Terraform project or the security group:
@@ -426,7 +425,7 @@ cause, that is an instrumentation gap, and it should be written down as one.
 
 ## 7. Networking track
 
-The networking lessons in [`AWS/kubeadm/k8/`](../README.md) (pod
+The networking lessons in [`AWS/kubeadm/k8/`](../../README.md) (pod
 networking, ClusterIP, CoreDNS, NodePort, Ingress, Gateway API,
 NetworkPolicy) also run on the webshop, where each networking decision shows
 up in the telemetry: [**docs/networking.md**](docs/networking.md). Ten
@@ -643,8 +642,8 @@ you installed it and nothing else uses it
 (`helm uninstall metrics-server -n kube-system`). The image stays in your
 registry. Nothing here touches the networking lessons' `three-tier`
 namespace, shared controllers, or AWS. To remove the whole disposable cluster,
-see [AWS/kubeadm/README.md, section 10](../../README.md#10-destroy).
+see [AWS/kubeadm/README.md, section 10](../../../README.md#10-destroy).
 
 ---
 
-> [All steps](../../../../README.md#learning-path) · Previous: step 3, [Helm chart signing](../helm/README.md) · Next: step 6, [Networking on the webshop](docs/networking.md), or step 7, [OpenTelemetry](docs/opentelemetry.md)
+> **Next:** [`docs/`](docs/README.md), steps 5–7: the exercises, networking on the webshop, OpenTelemetry

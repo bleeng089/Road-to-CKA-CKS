@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Operator CLI for the webshop lab: faults, load, blind exercises, verification.
 
-Run from AWS/kubeadm/k8/webshop/ with kubectl pointed at the cluster
+Run from AWS/kubeadm/k8/helm/webshop/ with kubectl pointed at the cluster
 (KUBECONFIG / current context, or --context). Standard library only; works
 from PowerShell, cmd, macOS and Linux.
 

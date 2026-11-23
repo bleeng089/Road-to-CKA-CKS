@@ -1,7 +1,6 @@
 # Incident 2 - Exhausted database pool
 
-> **Step 5 of 8: Incident and blind exercises** · Exercise 2 of 9 · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
-> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 1, Slow inventory](01-slow-inventory.md) · Next: [Incident 3, Retry amplification](03-retry-amplification.md)
+> **Step 5 of 8: Incident and blind exercises** · Exercise 2 of 9 · Run from `AWS/kubeadm/k8/helm/webshop/` · Needs: the webshop (step 4)
 
 **Start:** `python3 tools/lab.py fault apply pool-exhaustion`
 **Injected (known-fault exercise):** in checkout, 30% of database uses keep
@@ -129,4 +128,4 @@ p95 **4.8 ms**, checkout p95 **24 ms**, no pending callers, load back to
 
 ---
 
-> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 1, Slow inventory](01-slow-inventory.md) · Next: [Incident 3, Retry amplification](03-retry-amplification.md)
+> **Next:** [Incident 3, Retry amplification](03-retry-amplification.md)

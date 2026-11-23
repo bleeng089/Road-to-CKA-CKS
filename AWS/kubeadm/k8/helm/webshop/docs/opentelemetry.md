@@ -1,7 +1,6 @@
 # OpenTelemetry track: the concepts, running on the webshop
 
-> **Step 7 of 8: OpenTelemetry** · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
-> [All steps](../../../../../README.md#learning-path) · Previous: step 6, [Networking on the webshop](networking.md) · Next: step 8, [Tear down](../../../README.md#10-destroy)
+> **Step 7 of 8: OpenTelemetry** · Run from `AWS/kubeadm/k8/helm/webshop/` · Needs: the webshop (step 4)
 
 The webshop is instrumented with OpenTelemetry from end to end -
 [observability.md](observability.md) lists what it records and why. This
@@ -37,7 +36,7 @@ the pages in this order, so you can read a page and then run its module:
 | [Profiles](https://opentelemetry.io/docs/concepts/signals/profiles/): how profiles complement the other signals | [8](#module-8---profiles-the-signal-this-lab-does-not-have) |
 
 **Conventions.** As in the [networking track](networking.md): commands run
-from `AWS/kubeadm/k8/webshop/`, in one terminal where `KUBECONFIG`
+from `AWS/kubeadm/k8/helm/webshop/`, in one terminal where `KUBECONFIG`
 points at the lab (README quick start, step 1); `kubectl` is always written
 out, with the namespace right after it; **[on the worker]** marks commands
 for a shell on the worker node. Grafana is opened as in quick start step 6.
@@ -1487,4 +1486,4 @@ in the shop was changed.
 
 ---
 
-> [All steps](../../../../../README.md#learning-path) · Previous: step 6, [Networking on the webshop](networking.md) · Next: step 8, [Tear down](../../../README.md#10-destroy)
+> **Last step, 8:** tear the cluster down with `terraform destroy` in `AWS/kubeadm/` ([that README, section 10](../../../../README.md#10-destroy))

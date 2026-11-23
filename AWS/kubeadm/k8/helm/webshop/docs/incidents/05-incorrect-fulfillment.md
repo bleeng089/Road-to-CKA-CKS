@@ -1,7 +1,6 @@
 # Incident 5 - Incorrect fulfillment
 
-> **Step 5 of 8: Incident and blind exercises** · Exercise 5 of 9 · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
-> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 4, Bad replica](04-bad-replica.md) · Next: [Incident 6, Insufficient capacity](06-insufficient-capacity.md)
+> **Step 5 of 8: Incident and blind exercises** · Exercise 5 of 9 · Run from `AWS/kubeadm/k8/helm/webshop/` · Needs: the webshop (step 4)
 
 **Start:** `python3 tools/lab.py fault apply wrong-fulfillment`
 **Injected (known-fault exercise):** 30% of fulfilments ship the *other* color
@@ -125,4 +124,4 @@ telemetry tells you exactly which ones:
 
 ---
 
-> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 4, Bad replica](04-bad-replica.md) · Next: [Incident 6, Insufficient capacity](06-insufficient-capacity.md)
+> **Next:** [Incident 6, Insufficient capacity](06-insufficient-capacity.md)

@@ -5,30 +5,28 @@ Terraform, then take apart to see how they actually work. Written for CKA and
 CKS practice, where knowing *why* a packet did or did not arrive matters more
 than knowing which `kubectl` flag produces it.
 
-## Learning path
+## Where to start
 
-Work through the steps in order. Every step's page opens with the same
-header: which step it is, the directory its commands run from, and what it
-needs. Its **All steps** link brings you back to this table.
+Start in [`AWS/kubeadm/`](AWS/kubeadm/README.md). Each lesson's folder holds
+the next lesson, and every README ends with a **Next** link into the folder
+below it, so you go one folder deeper at each step:
 
-| Step | What you do | Run from | Needs |
-|---|---|---|---|
-| 1 | [**Build the cluster**](AWS/kubeadm/README.md): two nodes, `kubeadm` on EC2, Calico | `AWS/kubeadm/` | an AWS account |
-| 2 | [**Networking on a three-tier app**](AWS/kubeadm/k8/README.md): pods, Services, CoreDNS, NodePort, Ingress, Gateway API and NetworkPolicy, down to `nft` and `conntrack` on the nodes | `AWS/kubeadm/k8/` | step 1 |
-| 3 | [**Helm chart signing**](AWS/kubeadm/k8/helm/README.md): step 2's app as a GPG-signed chart, pushed to an OCI registry and verified on the way back | `AWS/kubeadm/k8/helm/` | a registry account; the cluster only from its section 9 |
-| 4 | [**Install the webshop**](AWS/kubeadm/k8/webshop/README.md#quick-start-on-the-aws-lab): an order system instrumented with OpenTelemetry, with Prometheus, Loki, Tempo and Grafana | `AWS/kubeadm/`, then `AWS/kubeadm/k8/webshop/` | step 1 |
-| 5 | [**Incident and blind exercises**](AWS/kubeadm/k8/webshop/README.md#5-incident-exercises): diagnose faults from telemetry that was already being collected | `AWS/kubeadm/k8/webshop/` | step 4 |
-| 6 | [**Networking on the webshop**](AWS/kubeadm/k8/webshop/docs/networking.md): step 2's topics on a real system, plus Calico's eBPF dataplane | `AWS/kubeadm/k8/webshop/` | step 4; a bigger worker (below) |
-| 7 | [**OpenTelemetry**](AWS/kubeadm/k8/webshop/docs/opentelemetry.md): the OpenTelemetry concepts, one script at a time, inside the cluster | `AWS/kubeadm/k8/webshop/` | step 4 |
-| 8 | [**Tear down**](AWS/kubeadm/README.md#10-destroy): `terraform destroy` removes everything | `AWS/kubeadm/` | — |
+- **1** [`AWS/kubeadm/`](AWS/kubeadm/README.md): build the cluster (step **8**, tearing it down, is its [section 10](AWS/kubeadm/README.md#10-destroy))
+  - **2** [`k8/`](AWS/kubeadm/k8/README.md): networking on a three-tier app
+    - **3** [`helm/`](AWS/kubeadm/k8/helm/README.md): Helm chart signing
+      - **4** [`webshop/`](AWS/kubeadm/k8/helm/webshop/README.md): install the webshop, an order system instrumented with OpenTelemetry
+        - **5–7** [`docs/`](AWS/kubeadm/k8/helm/webshop/docs/README.md): incident and blind exercises, networking on the webshop, OpenTelemetry
 
-- **Steps 5, 6 and 7 work in any order.** Each needs only step 4 and opens
-  with its own prerequisites.
+Every page opens with a one-line box: its step, the folder its commands run
+from, and what it needs.
+
+- **Steps 5, 6 and 7 work in any order.** Each needs only step 4.
 - **Steps 2 and 6 teach the same networking topics.** Step 2 shows each
   mechanism on three nginx tiers that only say which pod answered. Step 6
   runs the same modules on a real order flow with a database, a queue and
   telemetry, so you also see what each decision costs the users. New to
   Kubernetes networking? Do step 2 first.
+- **Step 3 needs no cluster** until its section 9.
 - **A bigger worker for step 6.** Its Ingress and Gateway API modules add two
   controllers to the worker, which leaves a `t3.medium` little headroom. Set
   `worker_instance_type = "t3.xlarge"` in `terraform.tfvars` when you build
@@ -45,15 +43,9 @@ needs. Its **All steps** link brings you back to this table.
 
 Each `<cloud>/<architecture>/` directory is one complete, standalone lab: its
 own Terraform project, its own state, its own README with the full
-walkthrough, and the lessons that run on it. Nothing is shared between labs,
-so you can build one, destroy it, and never touch the others.
-
-```text
-AWS/kubeadm/              the Terraform project that builds the cluster (steps 1 and 8)
-AWS/kubeadm/k8/           networking on a three-tier app (step 2); the other lessons sit inside it
-AWS/kubeadm/k8/helm/      Helm chart signing (step 3)
-AWS/kubeadm/k8/webshop/   the webshop: install, exercises, networking, OpenTelemetry (steps 4-7)
-```
+walkthrough, and the lessons that run on it, nested inside it as shown above.
+Nothing is shared between labs, so you can build one, destroy it, and never
+touch the others.
 
 The **AWS / kubeadm** cluster is two nodes (`master` + `worker`) bootstrapped
 with `kubeadm` on Ubuntu EC2 — containerd, Calico CNI with NetworkPolicy
@@ -85,5 +77,10 @@ yours to inspect and break.
   `cd AWS/kubeadm`), never from the repo root.
 - Every lab works identically from Windows PowerShell, Windows Command
   Prompt, macOS, and Linux. No Bash, WSL, or Git Bash required.
-- Every lesson page opens with the same header (its step, where its commands
-  run from, what it needs) and ends with links to the previous and next step.
+- Every lesson page opens with a one-line box (its step, the folder its
+  commands run from, what it needs) and ends with a **Next** link: into the
+  folder below, or to the next page in the same folder.
+
+---
+
+> **Next:** [`AWS/kubeadm/`](AWS/kubeadm/README.md), step 1: build the cluster

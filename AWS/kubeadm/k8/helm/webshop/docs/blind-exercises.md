@@ -1,7 +1,6 @@
 # Blind exercises
 
-> **Step 5 of 8: Incident and blind exercises** · The blind exercises, after the nine walkthroughs · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
-> [All steps](../../../../../README.md#learning-path) · Previous: [Incident 9, Network policy drop](incidents/09-policy-drop.md) · Next: step 6, [Networking on the webshop](networking.md)
+> **Step 5 of 8: Incident and blind exercises** · The blind exercises, after the nine walkthroughs · Run from `AWS/kubeadm/k8/helm/webshop/` · Needs: the webshop (step 4)
 
 The known-fault walkthroughs teach where to look. A blind exercise tests
 whether the system is instrumented well enough that you *can* look: an unknown
@@ -125,4 +124,4 @@ A "not determinable" written honestly is worth more than a confident guess.
 
 ---
 
-> [All steps](../../../../../README.md#learning-path) · Previous: [Incident 9, Network policy drop](incidents/09-policy-drop.md) · Next: step 6, [Networking on the webshop](networking.md)
+> **Next:** [networking.md](networking.md), step 6: networking on the webshop

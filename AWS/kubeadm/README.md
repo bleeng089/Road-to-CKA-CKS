@@ -1,7 +1,6 @@
 # AWS / kubeadm
 
-> **Step 1 of 8: Build the cluster** · Run from `AWS/kubeadm/` · Needs: an AWS account and the tools in section 1\
-> [All steps](../../README.md#learning-path) · Next: step 2, [Networking on a three-tier app](k8/README.md) · Step 8, [Tear down](#10-destroy), is section 10 of this page
+> **Step 1 of 8: Build the cluster** · Run from `AWS/kubeadm/` · Needs: an AWS account and the tools in section 1 · Step 8, tear down, is [section 10](#10-destroy)
 
 A disposable two-node Kubernetes cluster on AWS for CKA and CKS practice,
 built with `kubeadm` on plain EC2 — no EKS, no managed control plane, so
@@ -17,7 +16,7 @@ Lab layout:
 
 ```text
 AWS/kubeadm/        the Terraform project — terraform/aws commands run here
-AWS/kubeadm/k8/     the lessons you run on the built cluster (steps 2-7 of the learning path)
+AWS/kubeadm/k8/     the lessons you run on the built cluster: k8/ -> helm/ -> webshop/ (steps 2-7)
 ```
 
 ```text
@@ -181,8 +180,8 @@ prefixes are rejected, so a slip cannot quietly widen who can reach the API.
 
 ### Optional: a bigger worker for the webshop
 
-Step 6 of the [learning path](../../README.md#learning-path), networking on
-the webshop, adds an Ingress controller and Envoy Gateway to the worker,
+Step 6, [networking on the webshop](k8/helm/webshop/docs/networking.md),
+adds an Ingress controller and Envoy Gateway to the worker,
 which leaves a `t3.medium` little headroom. If you will do it, uncomment this
 line in `terraform.tfvars`:
 
@@ -283,8 +282,7 @@ kubectl get tigerastatus                  # calico: AVAILABLE True
 ```
 
 Both nodes `Ready` and Calico `AVAILABLE`: the cluster is built. **Next:**
-step 2, [Networking on a three-tier app](k8/README.md), or any step in the
-[learning path](../../README.md#learning-path).
+[`k8/`](k8/README.md), step 2: networking on a three-tier app.
 
 ## 8. Shell access to the nodes
 
@@ -496,4 +494,4 @@ points at no longer exists.
 
 ---
 
-> [All steps](../../README.md#learning-path) · Next: step 2, [Networking on a three-tier app](k8/README.md)
+> **Next:** [`k8/`](k8/README.md), step 2: networking on a three-tier app

@@ -1,7 +1,6 @@
 # Incident 3 - Retry amplification
 
-> **Step 5 of 8: Incident and blind exercises** · Exercise 3 of 9 · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
-> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 2, Exhausted database pool](02-pool-exhaustion.md) · Next: [Incident 4, Bad replica](04-bad-replica.md)
+> **Step 5 of 8: Incident and blind exercises** · Exercise 3 of 9 · Run from `AWS/kubeadm/k8/helm/webshop/` · Needs: the webshop (step 4)
 
 **Start:** `python3 tools/lab.py fault apply retry-amplification`
 **Injected (known-fault exercise):** the payment simulator answers 35% of
@@ -126,4 +125,4 @@ carrying (5.1 -> 3.6 requests/s including lookups).
 
 ---
 
-> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 2, Exhausted database pool](02-pool-exhaustion.md) · Next: [Incident 4, Bad replica](04-bad-replica.md)
+> **Next:** [Incident 4, Bad replica](04-bad-replica.md)

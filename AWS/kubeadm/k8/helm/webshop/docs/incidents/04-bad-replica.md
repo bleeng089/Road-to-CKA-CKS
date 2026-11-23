@@ -1,7 +1,6 @@
 # Incident 4 - Bad replica
 
-> **Step 5 of 8: Incident and blind exercises** · Exercise 4 of 9 · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
-> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 3, Retry amplification](03-retry-amplification.md) · Next: [Incident 5, Incorrect fulfillment](05-incorrect-fulfillment.md)
+> **Step 5 of 8: Incident and blind exercises** · Exercise 4 of 9 · Run from `AWS/kubeadm/k8/helm/webshop/` · Needs: the webshop (step 4)
 
 **Start:** `python3 tools/lab.py fault apply bad-replica` (checkout runs two
 replicas by default; the preset targets the first by pod name - pick another
@@ -120,4 +119,4 @@ configuration.)
 
 ---
 
-> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 3, Retry amplification](03-retry-amplification.md) · Next: [Incident 5, Incorrect fulfillment](05-incorrect-fulfillment.md)
+> **Next:** [Incident 5, Incorrect fulfillment](05-incorrect-fulfillment.md)

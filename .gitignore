@@ -55,7 +55,7 @@ terraform.rc
 .DS_Store
 *.swp
 
-# Webshop lab (AWS/kubeadm/k8/webshop): local state and Python build
+# Webshop lab (AWS/kubeadm/k8/helm/webshop): local state and Python build
 # output. chart/charts/*.tgz (downloaded Helm dependencies) is already covered
 # by *.tgz above - Chart.lock pins them and is committed.
 .lab-state/

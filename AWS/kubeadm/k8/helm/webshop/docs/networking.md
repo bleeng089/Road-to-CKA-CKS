@@ -1,9 +1,8 @@
 # Networking track: Kubernetes networking on the webshop
 
-> **Step 6 of 8: Networking on the webshop** · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4); a bigger worker for modules 6 and 7 (Capacity, below)\
-> [All steps](../../../../../README.md#learning-path) · Previous: step 5, [Incident and blind exercises](../README.md#5-incident-exercises) · Next: step 7, [OpenTelemetry](opentelemetry.md) · Background: [NAT and conntrack](nat-and-conntrack.md)
+> **Step 6 of 8: Networking on the webshop** · Run from `AWS/kubeadm/k8/helm/webshop/` · Needs: the webshop (step 4); a bigger worker for modules 6 and 7 (Capacity, below)
 
-The networking lessons in [`AWS/kubeadm/k8/`](../../README.md) teach pod
+The networking lessons in [`AWS/kubeadm/k8/`](../../../README.md) teach pod
 networking, Services, CoreDNS, NodePort, Ingress, the Gateway API and
 NetworkPolicy on a three-tier nginx app whose only job is to say which pod
 answered. This track runs the same modules on the webshop instead: a real
@@ -17,7 +16,7 @@ Calico v3.30.2 on its iptables dataplane, kube-proxy in iptables mode, nodes
 on kernel 7.0). Addresses and counts on your cluster will differ; the shapes
 will not.
 
-**Conventions.** Commands run from `AWS/kubeadm/k8/webshop/`; `kubectl`
+**Conventions.** Commands run from `AWS/kubeadm/k8/helm/webshop/`; `kubectl`
 is always written out, with the namespace right after it. **[on the worker]** / **[on the master]**
 mark commands for a node shell: from `AWS/kubeadm`, run the matching entry of
 `terraform output session_manager_commands` (or `ssh_commands`). The nodes'
@@ -1845,4 +1844,4 @@ delete it.) Removing the webshop itself is README section 11.
 
 ---
 
-> [All steps](../../../../../README.md#learning-path) · Previous: step 5, [Incident and blind exercises](../README.md#5-incident-exercises) · Next: step 7, [OpenTelemetry](opentelemetry.md) · Background: [NAT and conntrack](nat-and-conntrack.md)
+> **Next:** [opentelemetry.md](opentelemetry.md), step 7: OpenTelemetry

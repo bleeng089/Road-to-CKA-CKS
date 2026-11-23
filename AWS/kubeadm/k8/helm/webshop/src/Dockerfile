@@ -1,7 +1,7 @@
 # One image for every webshop component; the chart selects the component
 # with the container args (python -m webshop <component>).
 #
-# Build for the EC2 nodes (x86_64), from AWS/kubeadm/k8/webshop/:
+# Build for the EC2 nodes (x86_64), from AWS/kubeadm/k8/helm/webshop/:
 #   docker buildx build --platform linux/amd64 -t <registry>/webshop:0.2.0 --push src
 FROM python:3.13.16-slim-trixie
 

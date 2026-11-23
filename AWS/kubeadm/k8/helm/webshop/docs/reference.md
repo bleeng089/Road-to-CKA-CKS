@@ -1,7 +1,6 @@
 # Webshop reference: values, tests, layout, versions, limitations
 
-> **For maintainers:** what you need to change the chart or the code; the lessons do not need this page. Commands run from `AWS/kubeadm/k8/webshop/`.\
-> [All steps](../../../../../README.md#learning-path) · Back to the [webshop README](../README.md)
+> **For maintainers:** what you need to change the chart or the code; the lessons do not need this page. Commands run from `AWS/kubeadm/k8/helm/webshop/`.
 
 **Contents:** [Values reference](#values-reference) · [Tests](#tests) · [Folder layout](#folder-layout) · [Pinned versions](#pinned-versions) · [Where it was verified](#where-it-was-verified) · [Limitations, honestly](#limitations-honestly)
 
@@ -90,9 +89,10 @@ webshop/
 │                            dashboards in sync, integration (PostgreSQL + RabbitMQ)
 ├── networking/              the networking track's tester, values overlays, Gateway, eBPF patches
 ├── otel/                    the OpenTelemetry track's playground pod and scripts
-└── docs/                    install.md, observability.md, incidents/, blind-exercises.md, answer-key/,
-                             networking.md, nat-and-conntrack.md, opentelemetry.md, reference.md (this page),
-                             verification.md, diagrams/ (the two Kubernetes diagrams and their KubeDiagrams configs)
+└── docs/                    README.md (the order to read them in), install.md, observability.md, incidents/,
+                             blind-exercises.md, answer-key/, networking.md, nat-and-conntrack.md, opentelemetry.md,
+                             reference.md (this page), verification.md, diagrams/ (the two Kubernetes diagrams
+                             and their KubeDiagrams configs)
 ```
 
 ## Pinned versions
@@ -135,7 +135,3 @@ like the lab, then on the AWS lab itself.
 - `lab-control` is unauthenticated (reachable only by port-forward and by the
   webshop's own pods) and in-memory by design.
 - Anonymous Grafana Editor access is a lab convenience.
-
----
-
-> [All steps](../../../../../README.md#learning-path) · Back to the [webshop README](../README.md)

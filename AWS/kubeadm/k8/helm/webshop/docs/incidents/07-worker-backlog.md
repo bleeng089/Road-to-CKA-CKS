@@ -1,7 +1,6 @@
 # Incident 7 - Worker backlog
 
-> **Step 5 of 8: Incident and blind exercises** · Exercise 7 of 9 · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
-> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 6, Insufficient capacity](06-insufficient-capacity.md) · Next: [Incident 8, Duplicate charges](08-duplicate-charges.md)
+> **Step 5 of 8: Incident and blind exercises** · Exercise 7 of 9 · Run from `AWS/kubeadm/k8/helm/webshop/` · Needs: the webshop (step 4)
 
 **Start:** `python3 tools/lab.py fault apply worker-backlog`
 **Injected (known-fault exercise):** the fulfillment worker processes one
@@ -112,4 +111,4 @@ durable and every message is acknowledged only after its commit).
 
 ---
 
-> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 6, Insufficient capacity](06-insufficient-capacity.md) · Next: [Incident 8, Duplicate charges](08-duplicate-charges.md)
+> **Next:** [Incident 8, Duplicate charges](08-duplicate-charges.md)
