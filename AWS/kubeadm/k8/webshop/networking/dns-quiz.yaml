@@ -1,0 +1,74 @@
+# "Fix the FQDNs" - the networking track's DNS exercise (docs/networking.md,
+# Module 3). Modelled on a CKA practice question: a Deployment reads DNS names
+# from a ConfigMap and resolves them; the names start out as "todo".
+#
+# Its own namespace, so the webshop's default-deny policies do not apply - the
+# resolver only needs CoreDNS, which every namespace without policies reaches.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dns-quiz
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dns-quiz
+  namespace: dns-quiz
+data:
+  DNS_1: todo   # the Service kubernetes in namespace default
+  DNS_2: todo   # the headless Service webshop-checkout-pods in namespace webshop
+  DNS_3: todo   # the pod webshop-rabbitmq-0 in namespace webshop - must keep working when its IP changes
+  DNS_4: todo   # a pod with IP 1.2.3.4 in namespace kube-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resolver
+  namespace: dns-quiz
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: resolver}
+  template:
+    metadata:
+      labels: {app: resolver}
+    spec:
+      containers:
+        - name: resolver
+          image: busybox:1.36
+          # The four names arrive as environment variables - read once, when
+          # the container starts.
+          envFrom:
+            - configMapRef: {name: dns-quiz}
+          command: [sh, -c]
+          args:
+            - |
+              while true; do
+                for v in DNS_1 DNS_2 DNS_3 DNS_4; do
+                  name=$(printenv "$v")
+                  answer=$(nslookup "$name" 2>&1 | grep -E '^Address: ' | sed 's/Address: //' | tr '\n' ' ')
+                  echo "$v=$name -> ${answer:-NOT RESOLVED}"
+                done
+                echo "---"
+                sleep 15
+              done
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {memory: 16Mi}
+      terminationGracePeriodSeconds: 0
+---
+# A headless Service over the two checkout pods: one name, several addresses.
+# Only a DNS record - the webshop's NetworkPolicies still decide who may
+# connect to those pods.
+apiVersion: v1
+kind: Service
+metadata:
+  name: webshop-checkout-pods
+  namespace: webshop
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/instance: webshop
+    app.kubernetes.io/component: checkout
+  ports:
+    - {name: http, port: 80, targetPort: http}

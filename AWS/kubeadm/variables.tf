@@ -47,6 +47,12 @@ variable "instance_type" {
   default     = "t3.medium"
 }
 
+variable "worker_instance_type" {
+  description = "EC2 instance type for the worker only (x86_64); null uses instance_type. Changing it on a running lab resizes the worker in place (stop, modify, start): its root volume and private IP stay, its public IP changes."
+  type        = string
+  default     = null
+}
+
 variable "root_volume_size_gb" {
   description = "Size of the encrypted gp3 root volume on each node, in GiB."
   type        = number

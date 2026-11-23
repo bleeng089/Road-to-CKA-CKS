@@ -1,0 +1,24 @@
+# Implementation-specific, attached through the Gateway's
+# infrastructure.parametersRef. Envoy Gateway exposes a Gateway with a
+# LoadBalancer Service by default; the lab has no load-balancer controller,
+# so that Service would stay <pending> and the Gateway would report
+# "Programmed: False (AddressNotAssigned)". NodePort fits the lab.
+# The proxy's default request (512Mi) is sized for production traffic; next
+# to the webshop on one t3.medium worker it would use up most of the memory
+# headroom, while the lab's traffic needs about 70Mi.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: proxy-nodeport
+  namespace: webshop
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        type: NodePort
+      envoyDeployment:
+        container:
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 256Mi}

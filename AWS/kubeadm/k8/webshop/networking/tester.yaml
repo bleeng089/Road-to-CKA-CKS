@@ -1,0 +1,62 @@
+# A shell inside the cluster for the networking track (docs/networking.md).
+#
+# The webshop namespace is default-deny (the chart's NetworkPolicies), so a
+# pod nobody planned for can resolve names (allow-dns selects every pod) but
+# reach nothing else. Two extra policies make the tester a planned client of
+# the four HTTP services - and show that policies only ever add: the chart's
+# own policies stay untouched, these two are unioned with them.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tester
+  namespace: webshop
+  labels:
+    app.kubernetes.io/name: tester
+spec:
+  containers:
+    - name: tester
+      image: busybox:1.36
+      command: [sleep, "7200"]
+      resources:
+        requests: {cpu: 10m, memory: 16Mi}
+        limits: {memory: 32Mi}
+  terminationGracePeriodSeconds: 0
+---
+# Sender side: the tester may open connections to the four services' pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tester-egress
+  namespace: webshop
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: tester}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/instance, operator: In, values: [webshop]}
+              - {key: app.kubernetes.io/component, operator: In, values: [storefront, checkout, inventory, payment]}
+      ports:
+        - {protocol: TCP, port: 8080}
+---
+# Receiver side: those pods accept the tester. Ports are pod ports (8080),
+# not Service ports (80): policies see packets after kube-proxy's DNAT.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tester-ingress
+  namespace: webshop
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/instance, operator: In, values: [webshop]}
+      - {key: app.kubernetes.io/component, operator: In, values: [storefront, checkout, inventory, payment]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: tester}
+      ports:
+        - {protocol: TCP, port: 8080}

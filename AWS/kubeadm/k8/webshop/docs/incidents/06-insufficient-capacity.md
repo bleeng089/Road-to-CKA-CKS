@@ -1,6 +1,9 @@
 # Incident 6 - Insufficient capacity
 
-**Start:** `python tools/lab.py fault apply traffic-surge`
+> **Step 5 of 8: Incident and blind exercises** · Exercise 6 of 9 · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
+> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 5, Incorrect fulfillment](05-incorrect-fulfillment.md) · Next: [Incident 7, Worker backlog](07-worker-backlog.md)
+
+**Start:** `python3 tools/lab.py fault apply traffic-surge`
 **Injected (known-fault exercise):** nothing breaks. The synthetic traffic
 rises from 1 to 30 journeys per second - more than the initial replicas were
 sized for, and more than this two-vCPU node can serve at full speed. The HPAs (CPU, 70% of request) are free to react within their
@@ -108,9 +111,13 @@ pods say so.
 ## Recovery
 
 ```text
-python tools/lab.py fault reset
+python3 tools/lab.py fault reset
 ```
 
 Observed 2.5 minutes after the reset: journey p95 **0.50 s**, storefront
 `/api/checkout` p95 49 ms, worker CPU 0.30 cores. The HPAs scale back down after their 2-minute stabilization
 window, one pod per minute.
+
+---
+
+> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 5, Incorrect fulfillment](05-incorrect-fulfillment.md) · Next: [Incident 7, Worker backlog](07-worker-backlog.md)

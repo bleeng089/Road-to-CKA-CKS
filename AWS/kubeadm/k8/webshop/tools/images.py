@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Build (and optionally push) the single webshop image.
 
-    python tools/images.py build --tag 0.1.0
-        local image webshop:0.1.0 (for Kind: then `python tools/kind_cluster.py load`)
+    python tools/images.py build --tag 0.2.0
+        local image webshop:0.2.0 (for Kind: then `python tools/kind_cluster.py load`)
 
-    python tools/images.py build --registry docker.io/<your-user> --tag 0.1.0 --push
+    python tools/images.py build --registry docker.io/<your-user> --tag 0.2.0 --push
         builds for linux/amd64 (the EC2 nodes) and pushes, so containerd on the
         nodes can pull it. Log in first: `docker login` (or `podman login`).
 
 Building on your workstation does not put the image on the EC2 nodes: they
 pull from the registry like any other image. A private repository needs an
-imagePullSecret (README, "Build and publish the image").
+imagePullSecret (docs/install.md, "If your registry is private").
 
 Uses docker buildx when available, otherwise podman. Standard library only.
 """
@@ -65,7 +65,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="cmd", required=True)
     b = sub.add_parser("build")
     b.add_argument("--registry", default="", help="e.g. docker.io/<user>, ghcr.io/<user>; empty = local only")
-    b.add_argument("--tag", default="0.1.0")
+    b.add_argument("--tag", default="0.2.0")
     b.add_argument("--platform", default="linux/amd64", help="the lab's EC2 nodes are x86_64")
     b.add_argument("--push", action="store_true")
     b.add_argument("--tool", choices=["docker", "podman"])

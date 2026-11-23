@@ -1,0 +1,9 @@
+# Cluster-scoped, owned by whoever runs the platform: "Gateways of class 'eg'
+# are implemented by Envoy Gateway". Identical to the networking lessons'
+# k8/gateway/gatewayclass.yaml, so applying either one is harmless.
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: eg
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller

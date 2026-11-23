@@ -67,7 +67,7 @@ resource "aws_instance" "control_plane" {
 
 resource "aws_instance" "worker" {
   ami                         = data.aws_ami.ubuntu.id
-  instance_type               = var.instance_type
+  instance_type               = coalesce(var.worker_instance_type, var.instance_type)
   subnet_id                   = aws_subnet.public.id
   private_ip                  = local.worker_private_ip
   associate_public_ip_address = true

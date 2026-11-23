@@ -53,3 +53,18 @@ async def test_labcontrol_startup_adds_no_exporters(tel, monkeypatch):
     before = _processors(tel)
     await _asgi_lifespan(build())
     assert _processors(tel) == before, "lab-control must not export telemetry"
+
+
+async def test_responses_name_the_serving_pod(tel):
+    import httpx
+
+    from webshop.runtime import SERVED_BY_HEADER
+
+    comp = Component(Settings(component="tests", labcontrol_url="", instance_id="storefront-abc12"), tel)
+    comp.ready = True
+    app = create_app(comp, lambda: asyncio.sleep(0), lambda: asyncio.sleep(0), title="probe")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        ok = await client.get("/readyz")
+        missing = await client.get("/no-such-route")
+    assert ok.headers[SERVED_BY_HEADER] == "storefront-abc12"
+    assert missing.headers[SERVED_BY_HEADER] == "storefront-abc12", "error responses name the pod too"

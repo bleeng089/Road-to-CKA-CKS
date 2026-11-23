@@ -1,0 +1,25 @@
+# The listener, owned by the platform team: one HTTP listener on port 80 for
+# routes in the webshop namespace. Envoy Gateway answers by running an Envoy
+# Deployment + Service for it in envoy-gateway-system - which is why the
+# chart's NetworkPolicies must admit that namespace
+# (networkPolicy.ingressControllerNamespaces). The route itself is the app
+# team's and comes from the chart: exposure.httpRoute.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: webshop-gateway
+  namespace: webshop
+spec:
+  gatewayClassName: eg
+  infrastructure:
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: proxy-nodeport
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same

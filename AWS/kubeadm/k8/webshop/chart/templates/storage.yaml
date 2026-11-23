@@ -4,7 +4,7 @@ Lab storage for clusters without a dynamic provisioner (the AWS kubeadm lab
 has none): one local PersistentVolume per durable component, pinned to one
 node, pre-bound (claimRef) to the exact PVC that component will create.
 
-Prerequisite: the directories exist on that node (README, "Storage").
+Prerequisite: the directories exist on that node (README quick start, step 2).
 A local volume lives on the node's disk: it survives pod restarts,
 rescheduling (the pod follows the volume to its node) and
 `helm uninstall` (these PVs are kept), but not the node itself - rebuilding

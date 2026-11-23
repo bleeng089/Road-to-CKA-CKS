@@ -1,6 +1,9 @@
 # Incident 8 - Duplicate charges (explicit safeguard bypass)
 
-**Start:** `python tools/lab.py fault apply duplicate-charges --yes`
+> **Step 5 of 8: Incident and blind exercises** · Exercise 8 of 9 · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
+> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 7, Worker backlog](07-worker-backlog.md) · Next: [Incident 9, Network policy drop](09-policy-drop.md)
+
+**Start:** `python3 tools/lab.py fault apply duplicate-charges --yes`
 
 > **This exercise disables a safeguard on purpose.** In the healthy system a
 > retried payment call reuses its idempotency key, so the processor returns
@@ -9,7 +12,7 @@
 > retry** (the lab-control fault `idempotency_bypass`), and makes 40% of
 > captures answer only after 2 s, after the charge was made - longer than the
 > worker's 1.5 s timeout. It refuses to run without `--yes`, and
-> `python tools/lab.py fault reset` restores the safeguard.
+> `python3 tools/lab.py fault reset` restores the safeguard.
 
 Numbers quoted below were observed on the lab-shaped Kind cluster during the
 verification run (1 journey/s, 2-minute windows).
@@ -84,7 +87,7 @@ spans show the keys, not how they were built.
 ## Recovery
 
 ```text
-python tools/lab.py fault reset
+python3 tools/lab.py fault reset
 ```
 
 New orders are charged exactly once again (observed: 110 captures for 110
@@ -92,3 +95,7 @@ journeys in the next two minutes; SLI 100%). The duplicates
 already taken stay in the ledger - in real life each is a refund, and the
 journeys with `duplicate_charge` and the audits with `late_duplicate_charge`
 are the list of whom to refund.
+
+---
+
+> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 7, Worker backlog](07-worker-backlog.md) · Next: [Incident 9, Network policy drop](09-policy-drop.md)

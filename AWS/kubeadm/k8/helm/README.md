@@ -1,5 +1,8 @@
 # Helm, Hands-On: package, sign, publish, verify
 
+> **Step 3 of 8: Helm chart signing** · Run from `AWS/kubeadm/k8/helm/` · Needs: a registry account; the cluster only from section 9\
+> [All steps](../../../../README.md#learning-path) · Previous: step 2, [Networking on a three-tier app](../README.md) · Next: step 4, [Install the webshop](../webshop/README.md#quick-start-on-the-aws-lab)
+
 The same three-tier app from [`../README.md`](../README.md), rebuilt as a Helm
 chart and pushed to an OCI registry as a **signed** artifact — then pulled back
 down and verified before anything is installed.
@@ -7,12 +10,6 @@ down and verified before anything is installed.
 The networking lesson answers *how does a packet get there*. This one answers
 *how do you know the manifests you are about to apply are the ones you
 published*.
-
-> **Also in this directory:** [`webshop/`](webshop/README.md) is a separate,
-> larger project - an OpenTelemetry-instrumented webshop chart with
-> Prometheus, Loki, Tempo and Grafana, and repeatable incident exercises
-> diagnosed from telemetry alone. It has its own chart, commands, and
-> walkthrough; nothing below depends on it.
 
 ```text
    ./app  ──helm package --sign──>  app-1.0.1.tgz
@@ -53,6 +50,23 @@ signing, pushing, and verifying all work with no cluster at all.
 relative to it (`./app`, `./dist`). **Substitute your own values** for
 `<registry-namespace>` (your Docker Hub user or org) and `<key-name>` (the UID
 on your GPG key) throughout.
+
+---
+
+**Contents**
+
+1. [Render before you install](#1-render-before-you-install)
+2. [Chart version vs. app version](#2-chart-version-vs-app-version)
+3. [Prepare the signing keyrings](#3-prepare-the-signing-keyrings)
+4. [Package and sign](#4-package-and-sign)
+5. [Verify locally, before anything is published](#5-verify-locally-before-anything-is-published)
+6. [Push to an OCI registry](#6-push-to-an-oci-registry)
+7. [Pull it back and verify remotely](#7-pull-it-back-and-verify-remotely)
+8. [Under the hood: what a `.prov` file actually is](#8-under-the-hood-what-a-prov-file-actually-is)
+9. [Install and upgrade with verification on](#9-install-and-upgrade-with-verification-on)
+10. [Releasing a new version](#10-releasing-a-new-version)
+
+Also: [Known limitation](#known-limitation-namespace-is-only-half-templated) · [Exercises](#exercises) · [What signing does and does not prove](#what-signing-does-and-does-not-prove) · [Cleanup](#cleanup) · [References](#references)
 
 ---
 
@@ -496,3 +510,7 @@ change something, release a new version rather than deleting and re-pushing.
 - Helm registries (OCI): <https://helm.sh/docs/topics/registries/>
 - Helm provenance and integrity: <https://helm.sh/docs/topics/provenance/>
 - Docker Hub OCI artifacts: <https://docs.docker.com/docker-hub/repos/manage/hub-images/oci-artifacts/>
+
+---
+
+> [All steps](../../../../README.md#learning-path) · Previous: step 2, [Networking on a three-tier app](../README.md) · Next: step 4, [Install the webshop](../webshop/README.md#quick-start-on-the-aws-lab)

@@ -1,0 +1,4 @@
+# Module 9, back: the standard iptables dataplane (with kube-proxy).
+spec:
+  calicoNetwork:
+    linuxDataplane: Iptables

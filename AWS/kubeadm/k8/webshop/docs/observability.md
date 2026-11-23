@@ -1,10 +1,17 @@
 # How the webshop is instrumented, and why
 
+> **Background for steps 5–7:** how the webshop is instrumented, and why · Reading only, nothing to run\
+> [All steps](../../../../../README.md#learning-path) · Back to the [webshop README](../README.md)
+
 The test this lab sets itself: when something breaks, can you find out what,
 where, since when, and for whom - from telemetry that was **already being
 collected**, without adding a log line and reproducing the problem? Everything
 below exists before any fault is injected; the faults only change what the
 telemetry says.
+
+This page is the reference. For the OpenTelemetry concepts behind it, taught
+one at a time with scripts you run in the cluster, see the
+[OpenTelemetry track](opentelemetry.md).
 
 Contents: [identity](#1-identity-on-every-signal) ·
 [traces](#2-traces) · [context propagation](#3-context-propagation) ·
@@ -24,7 +31,7 @@ set by `src/webshop/telemetry.py` and the chart (Downward API):
 |---|---|---|
 | `service.name` | `checkout` | which component |
 | `service.namespace` | `webshop` | which system |
-| `service.version` | `0.1.0` | which build (image tag) |
+| `service.version` | `0.2.0` | which build (image tag) |
 | `service.instance.id` | `webshop-checkout-6ff7b9875d-4f7rh` | which replica - the pod name, so it matches `kubectl` |
 | `deployment.environment.name` | `aws-lab` | which environment |
 | `webshop.config.revision` | `3f9c1b2a7d10` | hash of the pod's deployed configuration: two pods with the same version but different revisions are configured differently |
@@ -342,7 +349,7 @@ them).
 ## 11. Retention, sampling, and scale
 
 The lab keeps **every** trace. Measured at the default rate (README section
-13 has the table): ~70 spans/s (~78 per journey, 6 million a day), ~570 MiB a
+9 has the table): ~70 spans/s (~78 per journey, 6 million a day), ~570 MiB a
 day in Tempo, ~1.3 GiB at its 48 h limit on a 5 Gi volume; logs ~9 records/s,
 ~35 MiB a day, 72 h; metrics ~30k series, ~180 MiB a day, 3 days or 2 GB.
 That is affordable on one node, and it means any trace an exemplar or a log
@@ -407,4 +414,15 @@ At higher volume, in roughly this order:
   container level would show only as symptoms.
 - No continuous profiling: the telemetry can locate slow code (a span), not
   explain it (which line, which lock).
+- Incoming trace context and baggage are trusted from every caller. The
+  storefront continues any `traceparent` it receives - including one that
+  says "not sampled", which switches tracing off for the whole request - and
+  the instrumentation forwards any `baggage` header to every downstream call.
+  Both are shown in the [OpenTelemetry track](opentelemetry.md), Modules 3
+  and 7. A production edge would drop or replace those headers for outside
+  callers, and keep them off calls to third parties.
 - No real-user monitoring in the browser UI.
+
+---
+
+> [All steps](../../../../../README.md#learning-path) · Back to the [webshop README](../README.md)

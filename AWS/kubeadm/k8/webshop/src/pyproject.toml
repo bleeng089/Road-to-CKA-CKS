@@ -1,6 +1,6 @@
 [project]
 name = "webshop"
-version = "0.1.0"
+version = "0.2.0"
 description = "Webshop observability lab: services, worker, synthetic client, and lab fault controller"
 requires-python = ">=3.12"
 dynamic = ["dependencies"]

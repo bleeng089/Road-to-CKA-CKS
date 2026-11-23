@@ -1,0 +1,15 @@
+# Step 1 of switching Calico to its eBPF dataplane (docs/networking.md,
+# Module 9). In eBPF mode Calico replaces kube-proxy - so Calico itself can
+# no longer reach the API server through the `kubernetes` Service
+# (10.96.0.1), the way every pod does. This tells the Tigera operator the API
+# server's real address; the operator then restarts Calico's pods with it.
+# 10.0.1.10:6443 is the lab's control plane (fixed private IP, see
+# AWS/kubeadm). Harmless to keep after switching back.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernetes-services-endpoint
+  namespace: tigera-operator
+data:
+  KUBERNETES_SERVICE_HOST: "10.0.1.10"
+  KUBERNETES_SERVICE_PORT: "6443"

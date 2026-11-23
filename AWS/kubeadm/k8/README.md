@@ -1,5 +1,8 @@
 # Kubernetes Networking, Hands-On
 
+> **Step 2 of 8: Networking on a three-tier app** · Run from `AWS/kubeadm/k8/` · Needs: the cluster (step 1)\
+> [All steps](../../../README.md#learning-path) · Previous: step 1, [Build the cluster](../README.md) · Next: step 3, [Helm chart signing](helm/README.md)
+
 A guided lesson on how traffic moves through a Kubernetes cluster — pod
 networking, Services, CoreDNS, ClusterIP, NodePort, Ingress, the Gateway API,
 and NetworkPolicy — taught through one simple three-tier app:
@@ -41,10 +44,21 @@ from earlier modules is assumed.
 
 Run all `kubectl` commands below from this `k8/` directory.
 
-**Companion lesson:** [`helm/`](helm/README.md) packages this same three-tier
-app as a Helm chart, signs it with GPG, publishes it to an OCI registry, and
-verifies the signature on the way back down. Independent of the modules below
-— most of it runs with no cluster at all.
+---
+
+**Contents**
+
+1. [Pod networking: every pod gets a real IP](#module-1--pod-networking-every-pod-gets-a-real-ip)
+2. [ClusterIP Services: a stable virtual IP in front of pods](#module-2--clusterip-services-a-stable-virtual-ip-in-front-of-pods)
+3. [CoreDNS: names instead of virtual IPs](#module-3--coredns-names-instead-of-virtual-ips)
+4. [Walk the chain](#module-4--walk-the-chain)
+5. [NodePort: the simplest way in from outside](#module-5--nodeport-the-simplest-way-in-from-outside)
+6. [Ingress: HTTP routing behind one entry point](#module-6--ingress-http-routing-behind-one-entry-point)
+7. [Gateway API: the successor](#module-7--gateway-api-the-successor)
+8. [NetworkPolicy: firewalling the tiers](#module-8--networkpolicy-firewalling-the-tiers)
+9. [Cleanup](#module-9--cleanup)
+
+Also: [Recap tables](#recap-tables) · [Troubleshooting](#troubleshooting) · [More to try](#more-to-try)
 
 ---
 
@@ -411,7 +425,7 @@ reply goes to `192.168.194.128`, the *master's* Calico address — the client
 was masqueraded so the return path leads back through the node that
 accepted the connection. That masquerade is also why the app sees the node,
 not the real client, as the source — exactly the problem
-`externalTrafficPolicy: Local` exists to solve ("Where to go next").
+`externalTrafficPolicy: Local` exists to solve ([More to try](#more-to-try)).
 
 **When you'll reach for this:** "NodePort not answering" triage in three
 questions. Is the rule programmed (`nft`/`iptables-save` grep the port)?
@@ -485,13 +499,17 @@ real DNS: in production `app.local` would be an A record pointing at a load
 balancer in front of the controller, and the Ingress would also hold the TLS
 certificate (`spec.tls`) and terminate HTTPS.
 
-**[on a node]** Under the hood there is nothing new: the controller's
-Service rides the same `KUBE-EXT-*`/`KUBE-SVC-*` chains at its own
-nodePort, and after a curl `sudo conntrack -L -p tcp --dport 3XXXX` shows
-hop one (you → controller pod, masqueraded) while `--dport 80` shows hop
-two (controller → frontend/api ClusterIP). Two separate flows — because an
-ingress controller is a real userspace proxy that terminates TCP and opens
-a new connection, unlike kube-proxy's in-kernel NAT.
+**[on a node]** Under the hood: the controller's own Service rides the same
+`KUBE-EXT-*`/`KUBE-SVC-*` chains at its nodePort, and after a curl
+`sudo conntrack -L -p tcp --dport 3XXXX` shows hop one (you → controller
+pod, masqueraded). Hop two is the surprise: `--dport 8080` (frontend) or
+`--dport 9000` (api) shows the controller connecting **straight to a pod
+IP**, not to the frontend/api ClusterIP — ingress-nginx watches the
+EndpointSlices itself and balances per request, so kube-proxy is not on
+that hop at all, and the connection stays open in a pool. Two separate
+flows — because an ingress controller is a real userspace proxy that
+terminates TCP and opens its own connection, unlike kube-proxy's in-kernel
+NAT.
 
 Ingress got HTTP routing standardized, but it shows its age: it only speaks
 HTTP, anything interesting hides in controller-specific annotations, and one
@@ -569,11 +587,13 @@ and the HTTPRoute (via Envoy) are serving side by side right now, which is
 itself a lesson: routing APIs are just resources; controllers make them
 real.
 
-**[on a node]** And underneath, the same machinery again: Envoy's Service
-rides the standard chains — after a curl, `sudo conntrack -L -p tcp
---dport 3YYYY` shows your hop to Envoy, `--dport 80` shows Envoy's hop to
-the backend Service. Every router in this lesson, however fancy, ends in
-the same nft rules and conntrack entries.
+**[on a node]** And underneath, the same picture as Module 6: Envoy's
+Service rides the standard chains — after a curl, `sudo conntrack -L -p tcp
+--dport 3YYYY` shows your hop to Envoy — and Envoy, like ingress-nginx,
+reaches the backends at their pod IPs (`--dport 8080`/`9000`), from the
+EndpointSlices, over pooled connections. Every router in this lesson ends in
+the same nft rules and conntrack entries; the proxies just skip kube-proxy
+for their second hop.
 
 ## Module 8 — NetworkPolicy: firewalling the tiers
 
@@ -758,12 +778,10 @@ Envoy Gateway delete can take a minute — it tears down CRDs.)
   rules**: normal on Ubuntu (Module 2) — read the decoded rules with
   `sudo iptables-save -t nat`.
 
-## Where to go next
+## More to try
 
-- **[`helm/`](helm/README.md)** — the same app as a signed Helm chart:
-  `helm package --sign`, push to an OCI registry, `helm pull --verify`, and
-  what a `.prov` file does and does not prove. The supply-chain half of CKS,
-  where this lesson is the networking half.
+- Run the same modules on a real system: step 6,
+  [Networking on the webshop](webshop/docs/networking.md).
 - Add `spec.tls` to the Ingress with a self-signed cert and terminate HTTPS.
 - Convert the frontend policy to only accept traffic from the ingress
   controller's namespace (`namespaceSelector`) instead of any source.
@@ -773,3 +791,7 @@ Envoy Gateway delete can take a minute — it tears down CRDs.)
   Service and observe source-IP preservation.
 - Scale db to 2 and point the api tier at `db-headless` to see client-side
   behavior without a VIP.
+
+---
+
+> [All steps](../../../README.md#learning-path) · Previous: step 1, [Build the cluster](../README.md) · Next: step 3, [Helm chart signing](helm/README.md)

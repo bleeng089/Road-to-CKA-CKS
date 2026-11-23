@@ -1,6 +1,9 @@
 # Incident 2 - Exhausted database pool
 
-**Start:** `python tools/lab.py fault apply pool-exhaustion`
+> **Step 5 of 8: Incident and blind exercises** · Exercise 2 of 9 · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
+> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 1, Slow inventory](01-slow-inventory.md) · Next: [Incident 3, Retry amplification](03-retry-amplification.md)
+
+**Start:** `python3 tools/lab.py fault apply pool-exhaustion`
 **Injected (known-fault exercise):** in checkout, 30% of database uses keep
 their connection for 2.5 s after their SQL has finished, and synthetic traffic
 doubles to 2 journeys/s. Each checkout pod has a pool of 5 connections and
@@ -100,7 +103,7 @@ has left.
 | Not the database | SQL p95 unchanged at 4.7 ms; PostgreSQL connections idle |
 | Connections are held while no SQL runs | hold p95 2.92 s vs SQL 4.8 ms |
 | Scope: the checkout pool, both replicas; the traffic doubled at the same time | per-pod pool panels; *Synthetic rate (target)* = 2 |
-| Load makes it worse | a calculation, not a measurement (Little's law): ~5 checkout database uses per journey x 2 journeys/s x 30% held x 2.5 s = ~7.5 connections held on average, out of 10 in the two pools - saturation with bursts. At 1 journey/s it would be ~3.75. Try `--param rate=0.3` with `python tools/lab.py load set --rate 1` to see the difference |
+| Load makes it worse | a calculation, not a measurement (Little's law): ~5 checkout database uses per journey x 2 journeys/s x 30% held x 2.5 s = ~7.5 connections held on average, out of 10 in the two pools - saturation with bursts. At 1 journey/s it would be ~3.75. Try `--param rate=0.3` with `python3 tools/lab.py load set --rate 1` to see the difference |
 
 **What this does not prove:** *what* holds the connections. Nothing in the
 telemetry identifies the holder - there is no span for "connection held
@@ -116,10 +119,14 @@ The late payment audit is what makes this visible.
 ## Recovery
 
 ```text
-python tools/lab.py fault reset
+python3 tools/lab.py fault reset
 ```
 
 Observed two minutes later: SLI **100%**, acquire wait p95 **0.5 ms**, hold
 p95 **4.8 ms**, checkout p95 **24 ms**, no pending callers, load back to
 1 journey/s. The audits keep reporting `charged_after_error` for another
 30 s - they re-check journeys evaluated during the incident.
+
+---
+
+> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 1, Slow inventory](01-slow-inventory.md) · Next: [Incident 3, Retry amplification](03-retry-amplification.md)

@@ -14,8 +14,8 @@ global:
 
 image:
   registry: docker.io
-  repository: library/webshop       # what `kind load docker-image webshop:0.1.0` registers
-  tag: "0.1.0"
+  repository: library/webshop       # what `kind load docker-image webshop:0.2.0` registers
+  tag: "0.2.0"
   pullPolicy: Never
 
 storage:

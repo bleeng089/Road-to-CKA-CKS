@@ -39,6 +39,11 @@ log = logging.getLogger(__name__)
 
 Hook = Callable[[], Awaitable[None]]
 
+# Names the pod that answered. Not telemetry - it is there for people: curl
+# a Service a few times and watch kube-proxy spread connections over the
+# endpoints (the networking track does exactly that).
+SERVED_BY_HEADER = "X-Served-By"
+
 # FastAPI 0.14x ships native OpenTelemetry support which, by default, emits
 # its own HTTP telemetry and *adds OTLP exporters* from the OTEL_* environment
 # to the global providers at startup. This process configures the SDK itself
@@ -125,7 +130,9 @@ def create_app(component: Component, startup: Hook, shutdown: Hook, *, title: st
             span = trace.get_current_span()
             if span.is_recording():
                 span.set_attribute(semconv.RETRY_ATTEMPT, int(attempt))
-        return await call_next(request)
+        response = await call_next(request)
+        response.headers[SERVED_BY_HEADER] = component.settings.instance_id
+        return response
 
     @app.exception_handler(DependencyError)
     async def dependency_failed(request: Request, exc: DependencyError):

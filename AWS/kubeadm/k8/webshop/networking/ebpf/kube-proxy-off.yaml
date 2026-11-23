@@ -1,0 +1,8 @@
+# Module 9, step 3: a nodeSelector no node matches - the DaemonSet keeps
+# existing (so it is easy to bring back) but runs no pods. Its iptables rules
+# stay in the kernel until Calico, in BPF mode, removes them.
+spec:
+  template:
+    spec:
+      nodeSelector:
+        non-calico: "true"

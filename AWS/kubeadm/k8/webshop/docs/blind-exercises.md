@@ -1,5 +1,8 @@
 # Blind exercises
 
+> **Step 5 of 8: Incident and blind exercises** · The blind exercises, after the nine walkthroughs · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
+> [All steps](../../../../../README.md#learning-path) · Previous: [Incident 9, Network policy drop](incidents/09-policy-drop.md) · Next: step 6, [Networking on the webshop](networking.md)
+
 The known-fault walkthroughs teach where to look. A blind exercise tests
 whether the system is instrumented well enough that you *can* look: an unknown
 combination of at least two faults starts at an unknown moment, and you
@@ -13,7 +16,7 @@ fine, reading the file is not.)
 ## Run one
 
 ```text
-python tools/lab.py blind start
+python3 tools/lab.py blind start
 ```
 
 This sets every scenario up the same way (checkout and inventory held at
@@ -99,8 +102,8 @@ hypothesis the spans cannot support.
 ## Reveal and stop
 
 ```text
-python tools/lab.py blind reveal
-python tools/lab.py blind stop
+python3 tools/lab.py blind reveal
+python3 tools/lab.py blind stop
 ```
 
 `reveal` prints the scenario, when the faults really began, a pointer into
@@ -119,3 +122,7 @@ is unchanged. `stop` clears the faults and restores the replica settings.
 | -2 | instrumentation changed before the diagnosis was written (`reveal` tells you) |
 
 A "not determinable" written honestly is worth more than a confident guess.
+
+---
+
+> [All steps](../../../../../README.md#learning-path) · Previous: [Incident 9, Network policy drop](incidents/09-policy-drop.md) · Next: step 6, [Networking on the webshop](networking.md)

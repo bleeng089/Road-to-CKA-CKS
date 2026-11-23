@@ -27,5 +27,5 @@ WARNING: networkPolicy.enabled=false - every pod can reach every other pod.
 {{- if eq .Values.storage.mode "localPV" }}
 
 Storage: local PersistentVolumes under {{ .Values.storage.localPV.basePath }} on node "{{ .Values.storage.localPV.nodeName }}".
-Pods stay Pending until those directories exist (README, "Storage").
+Pods stay Pending until those directories exist (README quick start, step 2).
 {{- end }}

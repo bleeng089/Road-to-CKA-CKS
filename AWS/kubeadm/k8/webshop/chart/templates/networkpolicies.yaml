@@ -5,6 +5,7 @@ the same pattern as Module 8 of the networking lessons, applied to every
 application and telemetry path:
 
   storefront -> checkout, inventory            checkout -> inventory, payment
+  (exposure.nodePort: exposure.nodePort.allowFrom -> storefront)
   fulfillment -> inventory, payment            loadgen -> storefront, payment
   checkout, inventory, payment, fulfillment, migrate -> postgresql
   checkout, fulfillment -> rabbitmq            app pods -> lab-control
@@ -87,6 +88,11 @@ spec:
         {{- range $.Values.networkPolicy.ingressControllerNamespaces }}
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: {{ . }}}
+        {{- end }}
+        {{- if $.Values.exposure.nodePort.enabled }}
+        {{- range $.Values.exposure.nodePort.allowFrom }}
+        - ipBlock: {cidr: {{ . }}}
+        {{- end }}
         {{- end }}
         {{- end }}
       ports:

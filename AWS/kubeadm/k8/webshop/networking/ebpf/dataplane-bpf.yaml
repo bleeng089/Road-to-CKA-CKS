@@ -1,0 +1,4 @@
+# Module 9, step 4: the Tigera operator restarts calico-node in eBPF mode.
+spec:
+  calicoNetwork:
+    linuxDataplane: BPF

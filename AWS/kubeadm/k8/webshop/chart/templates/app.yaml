@@ -135,10 +135,21 @@ metadata:
   labels:
     {{- include "webshop.labels" $ctx | nindent 4 }}
 spec:
+  {{- $np := $root.Values.exposure.nodePort }}
+  {{- if and (eq .name "storefront") $np.enabled }}
+  type: NodePort
+  externalTrafficPolicy: {{ $np.externalTrafficPolicy }}
+  {{- end }}
   selector:
     {{- include "webshop.selectorLabels" $ctx | nindent 4 }}
   ports:
-    - {name: http, port: 80, targetPort: http, protocol: TCP}
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+      {{- if and (eq .name "storefront") $np.enabled }}
+      nodePort: {{ $np.port }}
+      {{- end }}
 {{- end }}
 {{- if and $v.autoscaling $v.autoscaling.enabled }}
 ---

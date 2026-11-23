@@ -1,6 +1,9 @@
 # Incident 7 - Worker backlog
 
-**Start:** `python tools/lab.py fault apply worker-backlog`
+> **Step 5 of 8: Incident and blind exercises** · Exercise 7 of 9 · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
+> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 6, Insufficient capacity](06-insufficient-capacity.md) · Next: [Incident 8, Duplicate charges](08-duplicate-charges.md)
+
+**Start:** `python3 tools/lab.py fault apply worker-backlog`
 **Injected (known-fault exercise):** the fulfillment worker processes one
 message at a time instead of four, and each pick takes ~1.2 s longer.
 Checkout keeps accepting orders at the normal rate.
@@ -94,7 +97,7 @@ in-flight count - a small instrumentation gap.
 ## Recovery
 
 ```text
-python tools/lab.py fault reset
+python3 tools/lab.py fault reset
 ```
 
 Observed: the 56-message backlog was gone within about **25 s** of the reset
@@ -106,3 +109,7 @@ fall to nothing. Orders accepted during the incident are all eventually
 fulfilled - none lost: over the fault and the drain the worker reported 316
 `fulfilled` and 13 `compensated` jobs, no `failed` and no `retry` (the queue is
 durable and every message is acknowledged only after its commit).
+
+---
+
+> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 6, Insufficient capacity](06-insufficient-capacity.md) · Next: [Incident 8, Duplicate charges](08-duplicate-charges.md)

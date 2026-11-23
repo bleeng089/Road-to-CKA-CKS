@@ -30,6 +30,7 @@ admin_cidr = "203.0.113.25/32"
 # aws_profile = "training"
 
 # instance_type       = "t3.medium"
+# worker_instance_type = "t3.xlarge"   # worker only; resizes a running lab in place
 # root_volume_size_gb = 30
 
 # --------------------------------------------------------------------------

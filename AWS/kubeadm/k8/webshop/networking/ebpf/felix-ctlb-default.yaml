@@ -1,0 +1,3 @@
+# Module 9, back to iptables: restore Calico's default.
+spec:
+  bpfConnectTimeLoadBalancing: TCP

@@ -1,0 +1,7 @@
+# Module 9, step 2: no connect-time load balancer. With Calico v3.30.2 on the
+# lab's kernel (7.0) Felix cannot load that BPF program and panics when the
+# dataplane switches to BPF ("failed to attach connect-time load balancer").
+# Without it, Calico still NATs host-networked traffic to Services
+# (bpfHostNetworkedNATWithoutCTLB: Enabled, the default).
+spec:
+  bpfConnectTimeLoadBalancing: Disabled

@@ -1,8 +1,10 @@
-# KubeDiagrams configuration for the README diagram (kubernetes-aws.png).
-# Redraw from the webshop directory, after `helm dependency build ./chart`:
+# KubeDiagrams configuration for the README's Kubernetes-objects diagram
+# (kubernetes-aws.png). Redraw both diagrams from the webshop directory,
+# after `helm dependency build ./chart`:
 #
-#   helm template webshop ./chart -n webshop -f values/values-aws.yaml --skip-tests | kube-diagrams -c docs/diagrams/kube-diagrams.yaml -o docs/diagrams/kubernetes-aws.png -
+#   python3 tools/draw_diagrams.py
 #
+# The script lays the result out left to right, like the README flowchart.
 # Node IDs below assume release "webshop" in namespace "webshop".
 
 # The webshop chart leaves the namespace to Helm (its manifests have no
@@ -26,41 +28,62 @@ nodes:
   ClusterRole/rbac.authorization.k8s.io/v1: {show: false}
   ClusterRoleBinding/rbac.authorization.k8s.io/v1: {show: false}
 
-# References (mounts, env from Secrets) still order the layout top to bottom,
-# but with weight 0 they no longer drag whole groups sideways.
+# References (mounts, env from Secrets) with weight 0, so they do not drag
+# whole groups sideways.
 edges:
   REFERENCE: {color: black, weight: "0"}
 
-# Invisible layout edges: telemetry stack on top, the shop below it, the
-# PersistentVolumes at the bottom. The deepest telemetry objects point at
-# webshop-grafana-admin (the one real link between the two: Grafana's admin
-# credentials, kept by the webshop chart), and that Secret points at the
-# shop's top-level objects. The PVs are pre-bound from the PV side
-# (claimRef), which KubeDiagrams does not draw, so they are placed explicitly.
 diagram:
   edges:
-    - {from: webshop-prometheus-server/webshop/PersistentVolumeClaim/v1, to: webshop-grafana-admin/webshop/Secret/v1, style: invis, weight: "0"}
-    - {from: webshop-grafana/webshop/PersistentVolumeClaim/v1, to: webshop-grafana-admin/webshop/Secret/v1, style: invis, weight: "0"}
-    - {from: webshop-grafana/webshop/ConfigMap/v1, to: webshop-grafana-admin/webshop/Secret/v1, style: invis, weight: "0"}
-    - {from: webshop-prometheus-config/webshop/ConfigMap/v1, to: webshop-grafana-admin/webshop/Secret/v1, style: invis, weight: "0"}
-    - {from: webshop-grafana-dashboard-provider/webshop/ConfigMap/v1, to: webshop-grafana-admin/webshop/Secret/v1, style: invis, weight: "0"}
-    - {from: webshop-grafana-datasources/webshop/ConfigMap/v1, to: webshop-grafana-admin/webshop/Secret/v1, style: invis, weight: "0"}
-    - {from: webshop-grafana-dashboards/webshop/ConfigMap/v1, to: webshop-grafana-admin/webshop/Secret/v1, style: invis, weight: "0"}
-    - {from: webshop-collector-config/webshop/ConfigMap/v1, to: webshop-grafana-admin/webshop/Secret/v1, style: invis, weight: "0"}
-    - {from: webshop-grafana-admin/webshop/Secret/v1, to: webshop-storefront/webshop/Service/v1, style: invis, weight: "0"}
-    - {from: webshop-grafana-admin/webshop/Secret/v1, to: webshop-checkout/webshop/Service/v1, style: invis, weight: "0"}
-    - {from: webshop-grafana-admin/webshop/Secret/v1, to: webshop-inventory/webshop/Service/v1, style: invis, weight: "0"}
-    - {from: webshop-grafana-admin/webshop/Secret/v1, to: webshop-payment/webshop/Service/v1, style: invis, weight: "0"}
-    - {from: webshop-grafana-admin/webshop/Secret/v1, to: webshop-lab-control/webshop/Service/v1, style: invis, weight: "0"}
-    - {from: webshop-grafana-admin/webshop/Secret/v1, to: webshop-postgresql/webshop/Service/v1, style: invis, weight: "0"}
-    - {from: webshop-grafana-admin/webshop/Secret/v1, to: webshop-rabbitmq/webshop/Service/v1, style: invis, weight: "0"}
-    - {from: webshop-grafana-admin/webshop/Secret/v1, to: webshop-rabbitmq-headless/webshop/Service/v1, style: invis, weight: "0"}
-    - {from: webshop-grafana-admin/webshop/Secret/v1, to: webshop-fulfillment/webshop/Deployment/apps/v1, style: invis, weight: "0"}
-    - {from: webshop-grafana-admin/webshop/Secret/v1, to: webshop-loadgen/webshop/Deployment/apps/v1, style: invis, weight: "0"}
-    - {from: webshop-grafana-admin/webshop/Secret/v1, to: webshop-migrate-1/webshop/Job/batch/v1, style: invis, weight: "0"}
-    - {from: data-webshop-postgresql/webshop/PersistentVolumeClaim/v1, to: webshop-webshop-postgresql/PersistentVolume/v1, style: invis, weight: "0"}
-    - {from: data-webshop-postgresql/webshop/PersistentVolumeClaim/v1, to: webshop-webshop-rabbitmq/PersistentVolume/v1, style: invis, weight: "0"}
-    - {from: data-webshop-postgresql/webshop/PersistentVolumeClaim/v1, to: webshop-webshop-prometheus/PersistentVolume/v1, style: invis, weight: "0"}
-    - {from: data-webshop-postgresql/webshop/PersistentVolumeClaim/v1, to: webshop-webshop-loki/PersistentVolume/v1, style: invis, weight: "0"}
-    - {from: data-webshop-postgresql/webshop/PersistentVolumeClaim/v1, to: webshop-webshop-tempo/PersistentVolume/v1, style: invis, weight: "0"}
-    - {from: data-webshop-postgresql/webshop/PersistentVolumeClaim/v1, to: webshop-webshop-grafana/PersistentVolume/v1, style: invis, weight: "0"}
+    # Each claim's pre-bound local PersistentVolume. The binding is set on the
+    # PV side (claimRef), which KubeDiagrams does not draw by itself.
+    - {from: data-webshop-postgresql/webshop/PersistentVolumeClaim/v1, to: webshop-webshop-postgresql/PersistentVolume/v1, style: dotted, color: "#757575"}
+    - {from: data-webshop-rabbitmq/webshop/PersistentVolumeClaim/v1, to: webshop-webshop-rabbitmq/PersistentVolume/v1, style: dotted, color: "#757575"}
+    - {from: webshop-prometheus-server/webshop/PersistentVolumeClaim/v1, to: webshop-webshop-prometheus/PersistentVolume/v1, style: dotted, color: "#757575"}
+    - {from: storage-webshop-loki/webshop/PersistentVolumeClaim/v1, to: webshop-webshop-loki/PersistentVolume/v1, style: dotted, color: "#757575"}
+    - {from: storage-webshop-tempo/webshop/PersistentVolumeClaim/v1, to: webshop-webshop-tempo/PersistentVolume/v1, style: dotted, color: "#757575"}
+    - {from: webshop-grafana/webshop/PersistentVolumeClaim/v1, to: webshop-webshop-grafana/PersistentVolume/v1, style: dotted, color: "#757575"}
+    # Invisible layout edges: the README flowchart's arrows (drawn in
+    # dataflow-aws.png, see kube-diagrams-dataflow.yaml), so that both
+    # diagrams place the components in the flowchart's order.
+    - {from: webshop-loadgen/webshop/Deployment/apps/v1, to: webshop-storefront/webshop/Service/v1, style: invis, weight: "8"}
+    - {from: webshop-storefront/webshop/Deployment/apps/v1, to: webshop-checkout/webshop/Service/v1, style: invis, weight: "8"}
+    - {from: webshop-storefront/webshop/Deployment/apps/v1, to: webshop-inventory/webshop/Service/v1, style: invis}
+    - {from: webshop-checkout/webshop/Deployment/apps/v1, to: webshop-inventory/webshop/Service/v1, style: invis}
+    - {from: webshop-checkout/webshop/Deployment/apps/v1, to: webshop-payment/webshop/Service/v1, style: invis}
+    - {from: webshop-checkout/webshop/Deployment/apps/v1, to: webshop-postgresql/webshop/Service/v1, style: invis}
+    - {from: webshop-checkout/webshop/Deployment/apps/v1, to: webshop-rabbitmq/webshop/Service/v1, style: invis, weight: "8"}
+    - {from: webshop-rabbitmq/webshop/StatefulSet/apps/v1, to: webshop-fulfillment/webshop/Deployment/apps/v1, style: invis, weight: "8"}
+    - {from: webshop-fulfillment/webshop/Deployment/apps/v1, to: webshop-payment/webshop/Service/v1, style: invis}
+    - {from: webshop-fulfillment/webshop/Deployment/apps/v1, to: webshop-inventory/webshop/Service/v1, style: invis}
+    - {from: webshop-fulfillment/webshop/Deployment/apps/v1, to: webshop-postgresql/webshop/Service/v1, style: invis, weight: "8"}
+    - {from: webshop-inventory/webshop/Deployment/apps/v1, to: webshop-postgresql/webshop/Service/v1, style: invis}
+    - {from: webshop-payment/webshop/Deployment/apps/v1, to: webshop-postgresql/webshop/Service/v1, style: invis}
+    - {from: webshop-migrate-1/webshop/Job/batch/v1, to: webshop-postgresql/webshop/Service/v1, style: invis}
+    - {from: webshop-postgresql/webshop/StatefulSet/apps/v1, to: webshop-collector/webshop/Service/v1, style: invis, weight: "4"}
+    - {from: webshop-collector/webshop/Deployment/apps/v1, to: webshop-tempo/webshop/Service/v1, style: invis}
+    - {from: webshop-collector/webshop/Deployment/apps/v1, to: webshop-loki/webshop/Service/v1, style: invis, weight: "8"}
+    - {from: webshop-collector/webshop/Deployment/apps/v1, to: webshop-prometheus-server/webshop/Deployment/apps/v1, style: invis}
+    - {from: webshop-kube-state-metrics/webshop/Deployment/apps/v1, to: webshop-prometheus-server/webshop/Deployment/apps/v1, style: invis}
+    - {from: webshop-prometheus-server/webshop/Service/v1, to: webshop-grafana/webshop/Deployment/apps/v1, style: invis}
+    - {from: webshop-loki/webshop/Service/v1, to: webshop-grafana/webshop/Deployment/apps/v1, style: invis, weight: "8"}
+    - {from: webshop-tempo/webshop/Service/v1, to: webshop-grafana/webshop/Deployment/apps/v1, style: invis}
+    # The telemetry stack to the right of all of the shop's objects (as in
+    # the flowchart), not stacked above them.
+    - {from: webshop-config/webshop/ConfigMap/v1, to: webshop-collector/webshop/Service/v1, style: invis, weight: "1"}
+    - {from: webshop-grafana-admin/webshop/Secret/v1, to: webshop-collector/webshop/Service/v1, style: invis, weight: "1"}
+    - {from: webshop-postgresql/webshop/Secret/v1, to: webshop-collector/webshop/Service/v1, style: invis, weight: "1"}
+    - {from: webshop-rabbitmq/webshop/Secret/v1, to: webshop-collector/webshop/Service/v1, style: invis, weight: "1"}
+    - {from: data-webshop-postgresql/webshop/PersistentVolumeClaim/v1, to: webshop-collector/webshop/Service/v1, style: invis, weight: "1"}
+    - {from: data-webshop-rabbitmq/webshop/PersistentVolumeClaim/v1, to: webshop-collector/webshop/Service/v1, style: invis, weight: "1"}
+    # Left to right, a rank is a column: chain siblings that would otherwise
+    # stack into one tall column into a row instead.
+    - {from: webshop-collector-config/webshop/ConfigMap/v1, to: webshop-prometheus-config/webshop/ConfigMap/v1, style: invis, weight: "2"}
+    - {from: webshop-prometheus-config/webshop/ConfigMap/v1, to: webshop-grafana-datasources/webshop/ConfigMap/v1, style: invis, weight: "2"}
+    - {from: webshop-grafana-datasources/webshop/ConfigMap/v1, to: webshop-grafana-dashboard-provider/webshop/ConfigMap/v1, style: invis, weight: "2"}
+    - {from: webshop-grafana-dashboard-provider/webshop/ConfigMap/v1, to: webshop-grafana-dashboards/webshop/ConfigMap/v1, style: invis, weight: "2"}
+    - {from: webshop-webshop-postgresql/PersistentVolume/v1, to: webshop-webshop-rabbitmq/PersistentVolume/v1, style: invis, weight: "2"}
+    - {from: webshop-webshop-rabbitmq/PersistentVolume/v1, to: webshop-webshop-prometheus/PersistentVolume/v1, style: invis, weight: "2"}
+    - {from: webshop-webshop-prometheus/PersistentVolume/v1, to: webshop-webshop-loki/PersistentVolume/v1, style: invis, weight: "2"}
+    - {from: webshop-webshop-loki/PersistentVolume/v1, to: webshop-webshop-tempo/PersistentVolume/v1, style: invis, weight: "2"}
+    - {from: webshop-webshop-tempo/PersistentVolume/v1, to: webshop-webshop-grafana/PersistentVolume/v1, style: invis, weight: "2"}

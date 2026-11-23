@@ -18,11 +18,11 @@ global:
 # ---------------------------------------------------------------- the image
 # One image runs every component (python -m webshop <component>). Build it,
 # push it to a registry the nodes can pull from, and point this at it - see
-# the README, "Build and publish the image".
+# docs/install.md, "If you want to build and publish your own image".
 image:
   registry: docker.io
   repository: CHANGE-ME/webshop
-  tag: "0.1.0"
+  tag: "0.2.0"
   # Optional: pin by digest (sha256:...). Takes precedence over the tag.
   digest: ""
   pullPolicy: IfNotPresent
@@ -183,8 +183,8 @@ rabbitmq:
 #   storageClass - PVCs from a StorageClass ("" = the cluster default).
 #                  Needs a working provisioner.
 #   localPV      - the chart creates local PersistentVolumes pinned to one
-#                  node, in directories you create there first (README,
-#                  "Storage"). For clusters with no provisioner, e.g. the
+#                  node, in directories you create there first (docs/install.md,
+#                  step 2). For clusters with no provisioner, e.g. the
 #                  AWS kubeadm lab.
 #   ephemeral    - emptyDir: nothing survives a pod restart. Quick tries only.
 storage:
@@ -217,9 +217,26 @@ networkPolicy:
   ingressControllerNamespaces: []
 
 # ------------------------------------------------------- optional exposure
-# Port-forwarding is the default way in (README). These attach to a
-# controller you already run; lab-control is never exposed.
+# Port-forwarding is the default way in (README). nodePort needs nothing
+# else; ingress and httpRoute attach to a controller you already run
+# (docs/networking.md). lab-control is never exposed.
 exposure:
+  # Turns the storefront Service into type NodePort: the same port answers on
+  # every node. Under default-deny the storefront must also admit whatever
+  # source address the pod then sees, so allowFrom becomes an ipBlock rule:
+  # with externalTrafficPolicy Cluster that is the masquerading node (a node
+  # address or its Calico tunnel address from the pod CIDR); with Local, the
+  # real client - and only nodes running a storefront pod answer.
+  # Calico matches ipBlocks against pod addresses too, so the default
+  # 0.0.0.0/0 opens the storefront to every pod in the cluster (including
+  # the Ingress/Gateway controllers, whatever ingressControllerNamespaces
+  # says). Excluding the pod CIDR would also drop traffic entering through
+  # another node, masqueraded to that node's tunnel address in the pod CIDR.
+  nodePort:
+    enabled: false
+    port: 30080
+    externalTrafficPolicy: Cluster
+    allowFrom: [0.0.0.0/0]
   ingress:
     enabled: false
     className: nginx
@@ -227,7 +244,7 @@ exposure:
     grafanaHost: ""
   httpRoute:
     enabled: false
-    parentRefs: []            # e.g. [{name: app-gateway, namespace: three-tier}]
+    parentRefs: []            # e.g. [{name: webshop-gateway}] from networking/gateway/
     hostnames: [webshop.local]
 
 migration:

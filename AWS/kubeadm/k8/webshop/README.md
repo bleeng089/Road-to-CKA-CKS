@@ -1,5 +1,8 @@
 # Webshop observability lab: diagnose incidents from telemetry you already have
 
+> **Steps 4–7 of 8: the webshop** · Run from `AWS/kubeadm/k8/webshop/` (the quick start begins in `AWS/kubeadm/`) · Needs: the cluster (step 1)\
+> [All steps](../../../../README.md#learning-path) · Steps here: 4 [Install the webshop](#quick-start-on-the-aws-lab) · 5 [Incident and blind exercises](#5-incident-exercises) · 6 [Networking on the webshop](docs/networking.md) · 7 [OpenTelemetry](docs/opentelemetry.md)
+
 > An application is properly instrumented when developers can troubleshoot an
 > incident using telemetry already collected, without adding instrumentation
 > and reproducing the incident.
@@ -7,11 +10,11 @@
 This lesson builds a small but honest order-processing system on the AWS
 kubeadm cluster, instruments it with OpenTelemetry, ships every signal through
 an OpenTelemetry Collector into Prometheus, Loki and Tempo, and then breaks it
-in seven repeatable ways (plus one deliberate safeguard bypass). You diagnose
+in eight repeatable ways (plus one deliberate safeguard bypass). You diagnose
 each break in Grafana - first with a walkthrough, then blind, with the
 instrumentation frozen.
 
-It is a sibling of the signed `app` chart in [`../`](../README.md): same
+It is a sibling of the signed `app` chart in [`../helm/`](../helm/README.md): same
 cluster, same Helm, different question. The networking lessons ask *how does
 a packet get there*; this one asks *how do you know what your users got*.
 
@@ -36,41 +39,167 @@ flowchart LR
     OC -->|OTLP| TE[(Tempo)]
     OC -->|OTLP| LO[(Loki)]
     OC -.->|/metrics :8889<br/>scraped per pod| PR[(Prometheus)]
+    PG & MQ -.->|exporter metrics| PR
+    K8[Kubernetes API,<br/>kubelets] -.->|events| OC
+    K8 -.->|object state via kube-state-metrics,<br/>container usage via cAdvisor| PR
     PR & LO & TE --> GR[Grafana]
 ```
 
-Solid arrows are application traffic, dotted ones telemetry. `lab-control`, the
+Solid arrows are requests: the shop's own traffic and, inside the telemetry
+stack, the writes to the stores and Grafana's queries. Dotted arrows are
+telemetry collected from the components and from Kubernetes, plus the
+synthetic client's independent check of the payment ledger. `lab-control`, the
 internal fault controller every pod polls, is left out of the picture on
 purpose: it is not part of the system being observed.
+
+**What's in this folder for you**
+
+| You use | For |
+|---|---|
+| this README and [`docs/`](docs) | the lessons |
+| `tools/lab.py` | faults, load, blind exercises and checks (`python3 tools/lab.py --help`) |
+| [`networking/`](networking), [`otel/`](otel) | the files the networking and OpenTelemetry tracks apply and run |
+
+In `docs/`, open `answer-key/` only after you have written your answer;
+`reference.md` and `verification.md` are for maintainers. Everything else
+builds and tests the shop, and you only read it where a lesson links to it
+(the OpenTelemetry track shows code in `src/`): `src/` (the application),
+`chart/` and `observability/` (the Helm chart), `values/` (install settings;
+the quick start picks the right file), `tests/`, and the other scripts in
+`tools/`. To change any of it, start with [docs/reference.md](docs/reference.md).
+
+## Quick start on the AWS lab
+
+The install, start to finish. [docs/install.md](docs/install.md) explains
+what each step does and why, and covers the variations (your own image, a
+private registry, a throwaway install, Windows). Every block runs as pasted,
+top to bottom, in **one terminal** (bash or zsh on macOS/Linux): nothing to
+fill in, and each step waits until the cluster is actually ready for the next.
+For Windows, see the variants in section 1 and in
+[AWS/kubeadm/README.md, section 6](../../README.md#6-retrieve-the-kubeconfig).
+
+**1. Point kubectl at the lab.** From the repository root, after
+`terraform apply` has finished:
+
+```text
+cd AWS/kubeadm
+aws ssm get-parameter --name /kubeadm-lab/kubeconfig --with-decryption --query Parameter.Value --output text --region us-east-1 > kubeadm-lab.kubeconfig
+export KUBECONFIG="$PWD/kubeadm-lab.kubeconfig"
+kubectl wait --for=condition=Ready node --all --timeout=600s
+kubectl get nodes
+```
+
+Expect `master` and `worker`, both `Ready`.
+
+**2. Create the storage directories on the worker** ([why](docs/install.md#step-2-storage-directories-on-the-worker)). Still in
+`AWS/kubeadm`; Session Manager runs the command on the worker and returns:
+
+```text
+aws ssm start-session --region "$(terraform output -raw aws_region)" --target "$(terraform output -raw worker_instance_id)" --document-name AWS-StartInteractiveCommand --parameters command="sudo mkdir -p /var/lib/webshop/postgresql /var/lib/webshop/rabbitmq /var/lib/webshop/prometheus /var/lib/webshop/loki /var/lib/webshop/tempo /var/lib/webshop/grafana && ls -ld /var/lib/webshop/*"
+```
+
+Expect six `drwxr-xr-x ... root root` lines, one per directory. The session
+closes by itself afterwards (`Exiting session`, or `Cannot perform start
+session: EOF` - both just mean the one command is done).
+
+**3. Install metrics-server** ([why](docs/install.md#step-3-metrics-server)), which the HPAs need. A fresh lab
+does not have it; on one that already does, this is a harmless upgrade:
+
+```text
+helm upgrade --install metrics-server metrics-server --repo https://kubernetes-sigs.github.io/metrics-server/ --version 3.14.0 -n kube-system --set "args[0]=--kubelet-insecure-tls"
+kubectl -n kube-system rollout status deployment/metrics-server --timeout=180s
+kubectl wait --for=condition=Available apiservice/v1beta1.metrics.k8s.io --timeout=180s
+kubectl top nodes
+```
+
+Expect CPU and memory figures for `master` and `worker`.
+
+**4. Install** ([what it does](docs/install.md#step-4-install)). From `AWS/kubeadm`, into the webshop directory -
+every later command runs from there:
+
+```text
+cd k8/webshop
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo add grafana-community https://grafana-community.github.io/helm-charts
+helm dependency build ./chart
+helm upgrade --install webshop ./chart -n webshop --create-namespace -f values/values-aws.yaml --wait --timeout 10m
+kubectl -n webshop get pods
+```
+
+`--wait` makes Helm return only when every workload is ready - 3-5 minutes
+the first time (image pulls, PostgreSQL `initdb`, the migration Job). Then
+every pod is `Running`, and the `webshop-migrate-<revision>` pod `Completed`.
+(`helm repo add` for a repository you already have just says it is skipping.)
+The image is the public, prebuilt `docker.io/bleeng089/webshop:0.2.0`;
+[building your own](docs/install.md#if-you-want-to-build-and-publish-your-own-image).
+
+**5. Verify** ([what it checks](docs/install.md#step-5-verify)):
+
+```text
+helm test webshop -n webshop --logs
+python3 tools/lab.py verify
+python3 tools/lab.py check-dashboards
+```
+
+Expect `journey : good`, `0 failed` and `queries with errors: 0`.
+`check-dashboards` runs every dashboard query against the live Prometheus
+and Loki; an `empty` count is normal for panels whose condition is absent
+(for example no pending pods).
+
+**6. Open it** ([more](docs/install.md#step-6-open-the-shop-and-grafana)). First the Grafana password, in this terminal:
+
+```text
+python3 tools/lab.py grafana-password
+```
+
+A port-forward keeps running until you stop it, so each one gets a **new
+terminal** - and a new terminal does not know the kubeconfig.
+Open two, `cd` to this `webshop/` directory in each, and run one block in
+each:
+
+```text
+export KUBECONFIG="$PWD/../../kubeadm-lab.kubeconfig"
+kubectl -n webshop port-forward svc/webshop-storefront 8080:80
+```
+
+```text
+export KUBECONFIG="$PWD/../../kubeadm-lab.kubeconfig"
+kubectl -n webshop port-forward svc/webshop-grafana 3000:80
+```
+
+The shop is at <http://localhost:8080>; Grafana is at <http://localhost:3000>
+(user `admin`, the password from above). Ctrl+C in a terminal ends its
+port-forward. Next: the dashboards (section 3), then break
+something (section 5). When you are done, `terraform destroy` in `AWS/kubeadm` (the lab
+costs money while it runs; section 11 removes only the webshop).
 
 ---
 
 **Contents**
 
+- [Quick start on the AWS lab](#quick-start-on-the-aws-lab)
+
 1. [Prerequisites](#1-prerequisites)
 2. [What gets built](#2-what-gets-built)
-3. [Check the cluster before changing it](#3-check-the-cluster-before-changing-it)
-4. [Build and publish the image](#4-build-and-publish-the-image)
-5. [Storage: prepare the worker](#5-storage-prepare-the-worker)
-6. [Metrics API for the HPA](#6-metrics-api-for-the-hpa)
-7. [Deploy](#7-deploy)
-8. [Verify](#8-verify)
-9. [Open the shop and Grafana](#9-open-the-shop-and-grafana)
-10. [What each signal contributes](#10-what-each-signal-contributes)
-11. [Incident exercises](#11-incident-exercises)
-12. [Blind exercises](#12-blind-exercises)
-13. [Scaling and capacity](#13-scaling-and-capacity)
-14. [Troubleshooting](#14-troubleshooting)
-15. [Cleanup](#15-cleanup)
-16. [Values reference](#16-values-reference)
-17. [Tests](#17-tests)
-18. [Layout, versions, and limitations](#18-layout-versions-and-limitations)
+3. [Dashboards and signal links](#3-dashboards-and-signal-links)
+4. [What each signal contributes](#4-what-each-signal-contributes)
+5. [Incident exercises](#5-incident-exercises)
+6. [Blind exercises](#6-blind-exercises)
+7. [Networking track](#7-networking-track)
+8. [OpenTelemetry track](#8-opentelemetry-track)
+9. [Scaling and capacity](#9-scaling-and-capacity)
+10. [Troubleshooting](#10-troubleshooting)
+11. [Cleanup](#11-cleanup)
+
+For changing the chart or the code (values, tests, folder layout, versions,
+limitations): [docs/reference.md](docs/reference.md).
 
 ---
 
 ## 1. Prerequisites
 
-**A running AWS kubeadm lab.** Build it with [`AWS/kubeadm/`](../../../README.md)
+**A running AWS kubeadm lab.** Build it with [`AWS/kubeadm/`](../../README.md)
 (sections 1-7: `terraform apply`, wait for both nodes `ready`, fetch the
 kubeconfig) and point `KUBECONFIG` at the file exactly as that README shows.
 This lesson never touches the Terraform project or the security group:
@@ -83,21 +212,16 @@ everything below reaches the cluster through the API server on 6443.
 | kubectl | talk to the cluster |
 | Helm 3.8+ (written against v4.3) | install the chart |
 | Python 3.10+ | the `tools/*.py` helpers (standard library only, no packages) |
-| Docker with buildx, or Podman | build the application image |
-| A container registry account (Docker Hub, GHCR, ...) | the EC2 nodes pull the image from there |
+| Docker with buildx, or Podman | build the application image (only if you change `src/`; [docs/install.md](docs/install.md#if-you-want-to-build-and-publish-your-own-image)) |
+| A container registry account (Docker Hub, GHCR, ...) | the EC2 nodes pull your own image from there (same) |
 
 **Command conventions.** Commands run from this `webshop/` directory unless
-they say otherwise. `k` is `kubectl`, and the namespace always follows it
-(`k -n webshop get pods`). Set the alias once per terminal:
+they say otherwise. Every `kubectl` command is written out in full, with the
+namespace right after it (`kubectl -n webshop get pods`), so you can always
+see which namespace a command acts on.
 
-```text
-Windows PowerShell:  Set-Alias -Name k -Value kubectl
-Windows cmd:         doskey k=kubectl $*
-macOS / Linux:       alias k=kubectl
-```
-
-`python` below is your Python 3 interpreter: `py` on Windows (the launcher),
-often `python3` on macOS and Linux.
+`python3` below is your Python 3 interpreter; on Windows it is usually `py`
+(the launcher) instead.
 
 Commands marked **[on the worker]** run on the `worker` node: open a shell
 with `terraform output session_manager_commands` (or `ssh_commands`) from
@@ -125,19 +249,35 @@ with `terraform output session_manager_commands` (or `ssh_commands`) from
 One image runs every webshop component (`python -m webshop <component>`).
 
 The same release as Kubernetes objects, drawn from `values/values-aws.yaml`
-with [KubeDiagrams](https://github.com/philippemerle/KubeDiagrams) (open the
-image for full size):
+with [KubeDiagrams](https://github.com/philippemerle/KubeDiagrams) and laid
+out like the flowchart at the top: the shop from left to right on the left,
+the telemetry stack on the right, one box per Helm chart and inside it one per
+component (open an image for full size). First only the objects data flows
+through - workloads and Services - with the flowchart's arrows:
 
-[![Kubernetes objects of the webshop release: the telemetry stack on top, the shop's components below, the local PersistentVolumes at the bottom](docs/diagrams/kubernetes-aws.png)](docs/diagrams/kubernetes-aws.png)
+[![Data flow through the webshop release's workloads and Services: synthetic client and you on the left, the shop's components left to right, the telemetry stack on the right, the Kubernetes API above it](docs/diagrams/dataflow-aws.png)](docs/diagrams/dataflow-aws.png)
 
-Top: the telemetry stack, one box per Helm chart. Middle: the shop, one box
-per component. Bottom right: the six local PersistentVolumes - cluster-scoped,
-so outside the namespace, each pre-bound to its claim (section 5). Dashed
-arrows are Services selecting their pods; solid arrows are workloads using a
-ConfigMap, Secret or claim, and autoscalers pointing at their Deployment. Not
-drawn: the 22 NetworkPolicies, the RBAC objects and the Helm test pod. To
-redraw it after a chart change, run the command at the top of
-[docs/diagrams/kube-diagrams.yaml](docs/diagrams/kube-diagrams.yaml).
+Each arrow runs from the calling workload to the Service it calls; the
+Service's dashed arrow then points at the pods that answer. Grey: the shop's
+requests. Blue: telemetry - dotted where it leaves the component it describes,
+solid inside the telemetry stack. `lab-control` has no arrows, as in the
+flowchart. Not drawn: ConfigMaps, Secrets, claims and volumes, autoscalers,
+NetworkPolicies and RBAC objects.
+
+Then every object, in the same places:
+
+[![Kubernetes objects of the webshop release: the shop's components on the left, the telemetry stack on the right, the local PersistentVolumes top right](docs/diagrams/kubernetes-aws.png)](docs/diagrams/kubernetes-aws.png)
+
+Dashed arrows are Services selecting their pods; solid arrows are workloads
+using a ConfigMap, Secret or claim, and autoscalers pointing at their
+Deployment; dotted grey arrows lead from each claim to its local
+PersistentVolume (top right) - cluster-scoped, so outside the namespace, each
+pre-bound to its claim ([docs/install.md](docs/install.md#step-2-storage-directories-on-the-worker)).
+Not drawn: the 22 NetworkPolicies, the RBAC objects and the Helm test pod.
+
+To redraw both after a chart change (needs `helm`, `kube-diagrams` and
+Graphviz's `dot`): `python3 tools/draw_diagrams.py`. The configurations are
+in [docs/diagrams/](docs/diagrams/).
 
 **An accepted order is not a fulfilled order.** Checkout's 202 means: stock is
 held, the card is authorized, and the order and its "please fulfil" message
@@ -157,215 +297,10 @@ exercise each of these against a real PostgreSQL and RabbitMQ.
 
 Deeper explanation of the instrumentation: **[docs/observability.md](docs/observability.md)**.
 
-## 3. Check the cluster before changing it
+## 3. Dashboards and signal links
 
-Confirm you are pointed at the lab, not at some other cluster:
-
-```text
-k config current-context
-k get nodes -o wide
-```
-
-Expect `kubernetes-admin@kubernetes` (the kubeadm default the lab publishes)
-and two nodes, `master` and `worker`, `Ready`. Then look at what you are
-deploying into - the chart's defaults were budgeted against exactly this:
-
-```text
-k describe node worker
-k get node master -o jsonpath="{.spec.taints}"
-k get storageclass
-k get apiservice v1beta1.metrics.k8s.io
-k get ingressclass
-k get gatewayclass
-```
-
-| Question | Lab answer | Consequence |
-|---|---|---|
-| Worker allocatable | 2 CPU, ~3.7 GiB (t3.medium) | everything must fit here (section 13) |
-| Master taint | `node-role.kubernetes.io/control-plane:NoSchedule` | kept: nothing in this lesson tolerates it |
-| StorageClass | none ("No resources found") | durable components use local PVs (section 5) |
-| Metrics API | absent until you install metrics-server | the HPA needs it (section 6) |
-| Ingress/Gateway | only if you left Module 6/7 installed | port-forwarding is the default way in |
-
-If the existing three-tier app from the networking lessons is deployed, it can
-stay: it lives in its own namespace and requests 125m CPU and 160 Mi in total
-(five pods at 25m / 32 Mi), well inside the headroom below.
-
-## 4. Build and publish the image
-
-Building on your workstation does not put the image on the EC2 nodes: their
-containerd pulls it from a registry, like any other image. Build for
-`linux/amd64` (the nodes are x86_64, even if your laptop is ARM) and push:
-
-```text
-docker login
-python tools/images.py build --registry docker.io/<your-user> --tag 0.1.0 --push
-```
-
-(Podman works too: `--tool podman`. The equivalent raw command is
-`docker buildx build --platform linux/amd64 -t docker.io/<your-user>/webshop:0.1.0 --push src`.)
-
-A **public** repository needs nothing else. For a **private** one, give the
-nodes a pull credential and reference it:
-
-```text
-k create namespace webshop
-k -n webshop create secret docker-registry regcred --docker-server=https://index.docker.io/v1/ --docker-username=<your-user> --docker-password=<access-token>
-```
-
-and add `--set imagePullSecrets[0].name=regcred` to the install below. Use an
-access token, not your password. Every new image gets a new tag; to pin
-exactly what runs, set `image.digest` (`sha256:...`).
-
-## 5. Storage: prepare the worker
-
-The lab has no dynamic volume provisioner, so a PersistentVolumeClaim against
-a StorageClass would stay `Pending` forever. Instead, `values/values-aws.yaml`
-sets `storage.mode: localPV`: the chart creates one local PersistentVolume per
-durable component, pinned to the `worker` node and pre-bound to the claim that
-component will make. The directories must exist first, on the worker.
-
-Open a shell on the worker with Session Manager (the default - no SSH, no
-open ports) or with SSH (only if you set `ssh_enabled = true`; see
-[AWS/kubeadm/README.md, section 8](../../../README.md#8-shell-access-to-the-nodes)).
-From the `AWS/kubeadm` directory, print the ready-made commands:
-
-```text
-terraform output session_manager_commands
-terraform output ssh_commands
-```
-
-Run the `worker` entry from either list, for example
-`aws ssm start-session --target i-0abc... --region us-east-1` or
-`ssh -i ~/.ssh/id_ed25519 ubuntu@<worker-public-ip>`. Session Manager logs
-you in as `ssm-user`, SSH as `ubuntu`; both may use `sudo`. Then, **on the
-worker**:
-
-```bash
-sudo mkdir -p /var/lib/webshop/postgresql /var/lib/webshop/rabbitmq /var/lib/webshop/prometheus /var/lib/webshop/loki /var/lib/webshop/tempo /var/lib/webshop/grafana
-ls -ld /var/lib/webshop/*
-exit
-```
-
-No `chown` is needed: each pod sets an `fsGroup`, and the kubelet makes the
-local volume group-writable for it (PostgreSQL keeps its data in a
-subdirectory it creates itself, which is why `initdb` accepts the ownership).
-
-What this storage does and does not survive:
-
-| Event | Data |
-|---|---|
-| pod restart, rescheduling (the pod follows its volume to `worker`) | kept |
-| `helm uninstall` (PVs, generated Secrets and PVCs are kept on purpose) | kept |
-| deleting the PVs and the directories (section 15) | gone |
-| rebuilding the lab (`terraform destroy`/`apply`: new root EBS volume) | gone |
-
-Clusters with a provisioner can use `storage.mode: storageClass`. A quick,
-throwaway try can skip all of this with the overlay
-`-f values/values-ephemeral.yaml` (emptyDir everywhere: nothing survives a pod
-restart).
-
-## 6. Metrics API for the HPA
-
-`kubectl autoscale`-style CPU scaling reads the resource metrics API
-(`metrics.k8s.io`), which **metrics-server** provides - not Prometheus.
-`k get apiservice v1beta1.metrics.k8s.io` tells you whether it exists. If it
-does not, install it once, into `kube-system`, as a cluster component in its
-own Helm release (so uninstalling the webshop never takes it away from
-anything else):
-
-```text
-helm upgrade --install metrics-server metrics-server --repo https://kubernetes-sigs.github.io/metrics-server/ --version 3.14.0 -n kube-system --set "args[0]=--kubelet-insecure-tls"
-k top nodes
-```
-
-`--kubelet-insecure-tls` because kubeadm's kubelet serving certificates are
-self-signed; the production fix is `serverTLSBootstrap: true` plus approving
-the kubelets' CSRs.
-
-## 7. Deploy
-
-Fetch the pinned dependency charts (exact versions are in `chart/Chart.lock`):
-
-```text
-helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo add grafana-community https://grafana-community.github.io/helm-charts
-helm dependency build ./chart
-```
-
-`dependency build` also repackages the local [`observability/`](observability)
-chart (Collector, Prometheus and Grafana configuration) - re-run it whenever
-you edit anything there.
-
-Render first, then install:
-
-```text
-helm lint ./chart -f values/values-aws.yaml
-helm upgrade --install webshop ./chart -n webshop --create-namespace -f values/values-aws.yaml --set image.repository=<your-user>/webshop --dry-run=server
-helm upgrade --install webshop ./chart -n webshop --create-namespace -f values/values-aws.yaml --set image.repository=<your-user>/webshop
-k -n webshop get pods -w
-```
-
-The first start takes 3-5 minutes (image pulls, PostgreSQL `initdb`, the
-migration Job). Services wait for the database and the schema before they
-report ready; nothing crash-loops while they wait.
-
-## 8. Verify
-
-```text
-helm test webshop -n webshop --logs
-python tools/lab.py verify
-```
-
-`helm test` places one real order and judges it by the SLI rules (next
-section). `verify` then checks the whole telemetry path with that order (it
-first gives pods that are still starting up to two minutes - right after an
-install the HPAs briefly add replicas):
-
-| Check | What it proves |
-|---|---|
-| pods, NetworkPolicies, metrics.k8s.io | running under default-deny; HPA has its metrics API |
-| synthetic journey | fulfilled with the requested item, charged exactly once, within 5 s |
-| Prometheus targets, app metrics, instance identity | every Collector pod, exporter, kubelet and backend scraped; one series set per pod |
-| exemplars, exemplar -> Tempo | histogram observations carry trace IDs that resolve in Tempo |
-| journey trace, context across the queue | one trace spans all six services; `order.fulfill` is a child of `order.publish` |
-| Tempo search by order ID; Loki logs for the order | investigation by order ID works in both stores |
-| logs carry the trace ID; order ID is structured metadata | Loki -> Tempo and Tempo -> Loki links have something to join on; Loki's index stays small |
-| Kubernetes events in Loki; alert rules; Collector export failures | infra signals and pipeline health are collected |
-| Grafana data sources, links, dashboards | provisioning worked |
-
-`python tools/lab.py check-dashboards` additionally runs every dashboard
-query against the live stores and reports any that error.
-
-## 9. Open the shop and Grafana
-
-In two terminals:
-
-```text
-k -n webshop port-forward svc/webshop-storefront 8080:80
-k -n webshop port-forward svc/webshop-grafana 3000:80
-```
-
-- <http://localhost:8080> - pick a product **and a color**, check out, and
-  watch the order move from *accepted* to *fulfilled*. The page compares what
-  you ordered with what shipped.
-- <http://localhost:3000> - Grafana. Anonymous access is an Editor (local,
-  port-forward only; turn it off in `grafana.grafana.ini` before exposing it).
-  The admin username is `admin`; the password is generated on the first
-  install and kept in the `webshop-grafana-admin` Secret. In any shell
-  (PowerShell, Command Prompt, macOS, Linux):
-
-```text
-python tools/lab.py grafana-password
-```
-
-On Linux or macOS you can also read both values straight from the Secret:
-
-```bash
-k -n webshop get secret webshop-grafana-admin -o jsonpath='{.data.admin-user}' | base64 --decode; echo
-k -n webshop get secret webshop-grafana-admin -o jsonpath='{.data.admin-password}' | base64 --decode; echo
-```
+Open Grafana as in step 6 of the quick start (the shop page and Grafana's
+login are explained in [docs/install.md](docs/install.md#step-6-open-the-shop-and-grafana)).
 
 The **Webshop** folder holds six dashboards. Start at the top one:
 
@@ -389,7 +324,7 @@ The three links between signals, all provisioned:
 - **logs -> trace**: any log line written inside a span carries `trace_id`;
   expanding it shows an *Open trace* link.
 
-## 10. What each signal contributes
+## 4. What each signal contributes
 
 | Signal | Good at | Bad at |
 |---|---|---|
@@ -423,7 +358,7 @@ checks* with an expected rejection, counted separately and outside the
 denominator. Details, and how a production SLO would differ:
 [docs/observability.md](docs/observability.md).
 
-## 11. Incident exercises
+## 5. Incident exercises
 
 Faults are **off by default**. `lab-control` holds them in memory (a pod
 restart clears them), every pod polls it every 2 s through an uninstrumented
@@ -434,33 +369,53 @@ to confirm recovery.
 
 | # | Exercise | Start it | Walkthrough |
 |---|---|---|---|
-| 1 | Slow inventory | `python tools/lab.py fault apply slow-inventory` | [docs/incidents/01-slow-inventory.md](docs/incidents/01-slow-inventory.md) |
-| 2 | Exhausted database pool | `python tools/lab.py fault apply pool-exhaustion` | [02-pool-exhaustion.md](docs/incidents/02-pool-exhaustion.md) |
-| 3 | Retry amplification | `python tools/lab.py fault apply retry-amplification` | [03-retry-amplification.md](docs/incidents/03-retry-amplification.md) |
-| 4 | Bad replica | `python tools/lab.py fault apply bad-replica` | [04-bad-replica.md](docs/incidents/04-bad-replica.md) |
-| 5 | Incorrect fulfillment | `python tools/lab.py fault apply wrong-fulfillment` | [05-incorrect-fulfillment.md](docs/incidents/05-incorrect-fulfillment.md) |
-| 6 | Insufficient capacity | `python tools/lab.py fault apply traffic-surge` | [06-insufficient-capacity.md](docs/incidents/06-insufficient-capacity.md) |
-| 7 | Worker backlog | `python tools/lab.py fault apply worker-backlog` | [07-worker-backlog.md](docs/incidents/07-worker-backlog.md) |
-| 8 | Duplicate charges (**safeguard bypass**) | `python tools/lab.py fault apply duplicate-charges --yes` | [08-duplicate-charges.md](docs/incidents/08-duplicate-charges.md) |
+| 1 | Slow inventory | `python3 tools/lab.py fault apply slow-inventory` | [docs/incidents/01-slow-inventory.md](docs/incidents/01-slow-inventory.md) |
+| 2 | Exhausted database pool | `python3 tools/lab.py fault apply pool-exhaustion` | [02-pool-exhaustion.md](docs/incidents/02-pool-exhaustion.md) |
+| 3 | Retry amplification | `python3 tools/lab.py fault apply retry-amplification` | [03-retry-amplification.md](docs/incidents/03-retry-amplification.md) |
+| 4 | Bad replica | `python3 tools/lab.py fault apply bad-replica` | [04-bad-replica.md](docs/incidents/04-bad-replica.md) |
+| 5 | Incorrect fulfillment | `python3 tools/lab.py fault apply wrong-fulfillment` | [05-incorrect-fulfillment.md](docs/incidents/05-incorrect-fulfillment.md) |
+| 6 | Insufficient capacity | `python3 tools/lab.py fault apply traffic-surge` | [06-insufficient-capacity.md](docs/incidents/06-insufficient-capacity.md) |
+| 7 | Worker backlog | `python3 tools/lab.py fault apply worker-backlog` | [07-worker-backlog.md](docs/incidents/07-worker-backlog.md) |
+| 8 | Duplicate charges (**safeguard bypass**) | `python3 tools/lab.py fault apply duplicate-charges --yes` | [08-duplicate-charges.md](docs/incidents/08-duplicate-charges.md) |
+| 9 | Network policy drop | `python3 tools/lab.py fault apply policy-drop` | [09-policy-drop.md](docs/incidents/09-policy-drop.md) |
 
-End any of them with `python tools/lab.py fault reset` (also resets the load).
+End any of them with `python3 tools/lab.py fault reset` (also resets the load).
 `fault list`, `--duration 600` (auto-expiry), `--replica N` / `--instance POD`
-(one pod only) and `--param k=v` (override a parameter) work on every preset.
+(one pod only) and `--param k=v` (override a parameter) work on every preset
+except 9.
+
+Exercise 9 is the one fault outside `lab-control`: it edits a real
+NetworkPolicy (fulfillment may no longer reach payment), saving the original
+in `.lab-state/`; `fault reset` (or `fault remove policy-drop`) restores it,
+and so would the next `helm upgrade`. The evidence is in the telemetry, but
+so is the cause in `kubectl -n webshop get netpol` - the exercise is to find it
+from the symptoms first.
 
 Exercise 8 is different in kind: the healthy system *cannot* double-charge,
 because retries reuse their idempotency key. The preset explicitly switches
 that safeguard off (fresh keys on every retry) to show what the independent
 checks catch. It refuses to run without `--yes`.
 
-## 12. Blind exercises
+## 6. Blind exercises
 
 The real test. A random combination of two or more faults starts at a random
-moment; you diagnose it from Grafana alone, with the instrumentation frozen:
+moment; you diagnose it from Grafana alone, with the instrumentation frozen.
+Three separate steps - do not paste them together:
 
 ```text
-python tools/lab.py blind start
-python tools/lab.py blind reveal
-python tools/lab.py blind stop
+python3 tools/lab.py blind start
+```
+
+Diagnose, and write your report. Only then:
+
+```text
+python3 tools/lab.py blind reveal
+```
+
+and, to end the faults and the extra load:
+
+```text
+python3 tools/lab.py blind stop
 ```
 
 Rules, report template and scoring: **[docs/blind-exercises.md](docs/blind-exercises.md)**.
@@ -469,7 +424,87 @@ compares a fingerprint of every workload template and telemetry ConfigMap with
 the one taken at `start`: if you had to add logs, spans or metrics to find the
 cause, that is an instrumentation gap, and it should be written down as one.
 
-## 13. Scaling and capacity
+## 7. Networking track
+
+The networking lessons in [`AWS/kubeadm/k8/`](../README.md) (pod
+networking, ClusterIP, CoreDNS, NodePort, Ingress, Gateway API,
+NetworkPolicy) also run on the webshop, where each networking decision shows
+up in the telemetry: [**docs/networking.md**](docs/networking.md). Ten
+self-contained modules, each with its own Prerequisites block:
+
+| Module | Networking | What the webshop adds |
+|---|---|---|
+| 1 Pod networking | pod IPs, per-node CIDR blocks | a default-deny namespace from the start |
+| 2 ClusterIP | EndpointSlices, readiness, `KUBE-SVC` chains | `X-Served-By`; per-pod request split with and without keep-alive |
+| 3 CoreDNS | search lists, headless Services, DNS over conntrack | what `ndots:5` costs every call, in client vs server latency |
+| 4 The chain | one conntrack entry per hop | one trace across six services and a queue |
+| 5 NodePort | `KUBE-EXT`, masquerade, `externalTrafficPolicy` | the client address the pod records, per policy |
+| 6 Ingress | ingress-nginx, two flows | the controller goes to pod IPs, not the ClusterIP |
+| 7 Gateway API | Envoy Gateway, GatewayClass/Gateway/HTTPRoute | the route comes from the chart; the Gateway from the platform side |
+| 8 NetworkPolicy | additive allow-lists, `cali-*` chains | exercise 9: a policy drop diagnosed from telemetry |
+| 9 eBPF | Calico's eBPF dataplane replacing kube-proxy, and back | the SLI cost of each switch |
+| 10 Cleanup | | |
+
+Reading the NAT rules and conntrack entries the track shows is explained from first principles in [docs/nat-and-conntrack.md](docs/nat-and-conntrack.md).
+
+Its files are in [`networking/`](networking): the test pod and its policies
+(`tester.yaml`), the values overlays (`values-networking.yaml`,
+`values-gateway.yaml`), the webshop's own Gateway (`gateway/`), and the
+patches for the dataplane switch (`ebpf/`). The chart settings it uses:
+
+- `exposure.nodePort.enabled`: the storefront Service becomes a NodePort
+  (`30080`), and its NetworkPolicy admits `exposure.nodePort.allowFrom`
+  (default `0.0.0.0/0`; see `chart/values.yaml` for what source address the
+  pod sees with each `externalTrafficPolicy`). Calico applies that ipBlock
+  to pod addresses as well, so while the NodePort is on, any pod in the
+  cluster may reach the storefront - the edge is open, as the networking
+  lessons' frontend is; the rest of the policies are unaffected.
+- `exposure.ingress.enabled` (class `nginx`, host `webshop.local`) for an
+  ingress-nginx controller, with `ingress-nginx` in
+  `networkPolicy.ingressControllerNamespaces`.
+- `exposure.httpRoute.enabled` for Envoy Gateway, attached to the Gateway in
+  [`networking/gateway/`](networking/gateway), with `envoy-gateway-system` in
+  `networkPolicy.ingressControllerNamespaces`. (The networking lessons'
+  `app-gateway` only admits routes from its own namespace, hence a Gateway of
+  the webshop's own.)
+
+Only the storefront and Grafana are ever exposed, and only to the nodes: the
+lab's security group keeps NodePorts closed. Every response carries an
+`X-Served-By` header naming the pod that answered. Modules 6 and 7 add two
+controllers to the worker; see "A bigger worker" in section 9.
+
+## 8. OpenTelemetry track
+
+The OpenTelemetry concept pages - the observability primer, context
+propagation, and the signals: traces, metrics, logs, baggage, profiles -
+taught heading by heading on this webshop:
+[**docs/opentelemetry.md**](docs/opentelemetry.md). For each idea it shows
+the webshop code that does it, a short script that does only that, run
+inside the cluster, and where the result shows up in Grafana. Ten
+self-contained modules, in the order of the pages:
+
+| Module | OpenTelemetry page | You run | What it shows |
+|---|---|---|---|
+| 0 Playground | | `otel/hello.py` | one span, one metric, one log record through the Collector |
+| 1 Observability primer | what is observability, reliability, metrics, SLI, SLO | the wrong-fulfillment fault, `otel/sli_check.py` | no 5xx and a 62% SLI at the same time - the primer's black shoes |
+| 2 Distributed tracing | logs, spans, span attributes, traces | `log_in_context.py`, `span_anatomy.py`, `waterfall.py` | correlated logs, the semantic-convention attributes on a real span, how to read a waterfall |
+| 3 Context propagation | context, propagation, custom carriers, security | `propagation.py`, `custom_carrier.py`, `forged_context.py` | `traceparent` by hand, per-edge metrics, a trace through a text file, a database row and AMQP, forged headers |
+| 4 Traces | Tracer Provider, Tracer, exporters | `trace_pipeline.py` | stdout vs Collector vs straight to Tempo, and what the Collector adds |
+| 5 Metrics | Meter Provider, Meter, exporters | `metric_pipeline.py` | aggregation, Prometheus names, exemplars, a p95 of 0.38 s vs 4.75 s from the same data |
+| 6 Logs | bridge, Logger Provider, Log Record, the Collector | `log_pipeline.py` | a Log Record field by field; Kubernetes events through `k8sobjects` and OTTL |
+| 7 Baggage | | `baggage.py`, a capture on the worker | baggage forwarded by the instrumentation, believed without checks |
+| 8 Profiles | | the slow-inventory fault | what a span cannot tell you |
+| 9 Cleanup | | | |
+
+Its files are in [`otel/`](otel): the playground pod and its NetworkPolicies
+(`playground.yaml`) and the scripts. The playground runs the webshop's own
+image, so the scripts use exactly the SDK and instrumentation versions the
+services use; a script is piped into it
+(`kubectl -n webshop exec -i otel-playground -- python - < otel/hello.py`),
+so you can edit it on your laptop and run it again. The scripts change
+nothing in the shop.
+
+## 9. Scaling and capacity
 
 **State and identity across replicas.** No pod holds business state: orders,
 reservations, payments and messages live in PostgreSQL and RabbitMQ, so any
@@ -480,11 +515,11 @@ name), so Prometheus keeps one series set per pod and the per-pod panels can
 compare replicas. Scale by hand:
 
 ```text
-k -n webshop scale deploy/webshop-fulfillment --replicas=2
+kubectl -n webshop scale deploy/webshop-fulfillment --replicas=2
 ```
 
 checkout, storefront, inventory and payment scale with their HPAs
-(`k -n webshop get hpa`); edit `components.<name>.autoscaling` to change the
+(`kubectl -n webshop get hpa`); edit `components.<name>.autoscaling` to change the
 bounds. **Single-instance by design in this profile:** PostgreSQL, RabbitMQ,
 Prometheus, Loki, Tempo, Grafana and the Collector. Making those highly
 available is a different project (operators or managed services, replication,
@@ -509,6 +544,16 @@ make saturation and throttling observable in exercise 6. `t3` instances are
 burstable: sustained high CPU there spends CPU credits (unlimited mode bills
 the surplus), one more reason to keep the capacity exercise short.
 
+**A bigger worker.** The webshop alone fits a t3.medium; with an Ingress
+controller and Envoy Gateway as well (the networking track) the worker's
+requests reach ~79% CPU and ~84% memory, leaving little room for the HPAs.
+`worker_instance_type = "t3.xlarge"` in `AWS/kubeadm/terraform.tfvars` and a
+`terraform apply` resize the worker in place (about two minutes, the webshop
+is down meanwhile; data, private IP and node name stay, the public IP
+changes): requests then sit at ~39% / ~20% of 4 CPU / 15.3 GiB. The exercise
+numbers in the walkthroughs were measured on t3.medium; with 4 vCPUs,
+saturation in exercise 6 needs more load.
+
 **Telemetry and data volume.** Every trace is kept (no sampling). Measured on
 the lab-shaped cluster over 22 minutes of steady traffic at the default rate
 (0.9 evaluated journeys/s plus validation checks, no faults):
@@ -526,7 +571,7 @@ fault or load change without `--duration` stays until you reset it, and at
 exercise 6's 30 journeys/s traces alone would grow by more than 15 GiB a day.
 Local volumes do not enforce their size: everything shares the worker's 30 GB
 root disk (`sudo du -sh /var/lib/webshop/*` **[on the worker]**). To start
-PostgreSQL afresh, remove its volume as in section 15. At higher scale you
+PostgreSQL afresh, remove its volume as in section 11. At higher scale you
 would sample (tail-based sampling in a Collector tier that sees whole traces,
 keeping all errors and slow traces), shorten retention, and move the stores to
 object storage - see [docs/observability.md](docs/observability.md).
@@ -545,45 +590,36 @@ switches every bundled backend off and wires connections and credentials
 through Secret references (the Collector stays, exporting to your Tempo, Loki
 and Prometheus with auth headers from a Secret).
 
-**Optional ways in.** Port-forwarding needs nothing installed and goes through
-the API server, the only port the lab's security group opens. If you kept the
-ingress-nginx (Module 6) or Envoy Gateway (Module 7) controller, the chart can
-attach to it: `exposure.ingress.enabled` (class `nginx`, host `webshop.local`)
-or `exposure.httpRoute.enabled` with `parentRefs` naming a Gateway, plus that
-controller's namespace in `networkPolicy.ingressControllerNamespaces`. Module
-7's `app-gateway` only admits routes from its own namespace
-(`allowedRoutes.namespaces.from: Same`), so an HTTPRoute in `webshop` needs a
-Gateway (or listener) of your own that allows it - the lesson's resources are
-left as they are. Only the storefront and Grafana are ever exposed; the
-controllers' NodePorts are still reachable only from the nodes, as in Module 5.
+**Ways in besides port-forwarding** (NodePort, Ingress, Gateway API) are
+part of the networking track: section 7.
 
-## 14. Troubleshooting
+## 10. Troubleshooting
 
 | Symptom | Cause and fix |
 |---|---|
-| Pods `Pending`, events say `didn't find available persistent volumes` / `node(s) didn't match PersistentVolume's node affinity` | `storage.localPV.nodeName` does not match the node's name, or a PV is `Released` from an earlier install (section 15) |
-| Right after install: `ProvisioningFailed ... storageclass.storage.k8s.io "webshop-local" not found` and `FailedScheduling ... unbound immediate PersistentVolumeClaims` | harmless if it clears within seconds: a claim was seen just before its pre-created volume and binds on the controller's next pass. There is deliberately no StorageClass object (nothing could provision). If it persists, a PV is missing or `Released` (`k get pv`) |
-| Pod stuck `ContainerCreating`, event `MountVolume.NewMounter ... path "/var/lib/webshop/..." does not exist` | create the directories on the worker (section 5) |
-| A StatefulSet pod (`webshop-postgresql-0`, `webshop-rabbitmq-0`) keeps crash-looping after the `helm upgrade` that should fix it | a StatefulSet rolling update waits for the old pod to become Ready, so a crashing one is never replaced: `k -n webshop delete pod webshop-rabbitmq-0` |
-| A backend pod restarts; alert `ContainerRestarted` or `ContainerNearMemoryLimit` | `k -n webshop describe pod <pod>` (*Last State*). Exit code 137 is SIGKILL - usually the memory limit, even when the reason says `Error`; raise that component's `resources.limits.memory` |
+| Pods `Pending`, events say `didn't find available persistent volumes` / `node(s) didn't match PersistentVolume's node affinity` | `storage.localPV.nodeName` does not match the node's name, or a PV is `Released` from an earlier install (section 11) |
+| Right after install: `ProvisioningFailed ... storageclass.storage.k8s.io "webshop-local" not found` and `FailedScheduling ... unbound immediate PersistentVolumeClaims` | harmless if it clears within seconds: a claim was seen just before its pre-created volume and binds on the controller's next pass. There is deliberately no StorageClass object (nothing could provision). If it persists, a PV is missing or `Released` (`kubectl get pv`) |
+| Pod stuck `ContainerCreating`, event `MountVolume.NewMounter ... path "/var/lib/webshop/..." does not exist` | create the directories on the worker (quick start, step 2) |
+| A StatefulSet pod (`webshop-postgresql-0`, `webshop-rabbitmq-0`) keeps crash-looping after the `helm upgrade` that should fix it | a StatefulSet rolling update waits for the old pod to become Ready, so a crashing one is never replaced: `kubectl -n webshop delete pod webshop-rabbitmq-0` |
+| A backend pod restarts; alert `ContainerRestarted` or `ContainerNearMemoryLimit` | `kubectl -n webshop get pods -o custom-columns=POD:.metadata.name,RESTARTS:.status.containerStatuses[*].restartCount,REASON:.status.containerStatuses[*].lastState.terminated.reason,EXIT:.status.containerStatuses[*].lastState.terminated.exitCode` lists every pod's last termination. Exit code 137 is SIGKILL - usually the memory limit, even when the reason says `Error`; raise that component's `resources.limits.memory` |
 | `ImagePullBackOff` | wrong `image.repository`, a private repository without `imagePullSecrets`, or an arm64-only image (rebuild with `--platform linux/amd64`) |
-| A service stays `0/1 Running` | it is waiting: `k -n webshop logs deploy/webshop-checkout` says for what (database, schema migration, catalog, broker) |
-| HPA shows `<unknown>` targets | no metrics API (section 6) |
-| Grafana panels empty everywhere | check *Telemetry health* first; then `python tools/lab.py verify` |
+| A service stays `0/1 Running` | it is waiting: `kubectl -n webshop logs deploy/webshop-checkout` says for what (database, schema migration, catalog, broker) |
+| HPA shows `<unknown>` targets | no metrics API (quick start, step 3) |
+| Grafana panels empty everywhere | check *Telemetry health* first; then `python3 tools/lab.py verify` |
 | Collector or Prometheus targets down after you narrowed NetworkPolicy CIDRs | `networkPolicy.apiServer` must contain the control plane's real address and `networkPolicy.kubelet` the nodes (policies apply after the Service IP is rewritten) |
 | Collector still uses an old pipeline after editing `observability/` | re-run `helm dependency build ./chart` before `helm upgrade` (the Collector restarts on every upgrade) |
-| Data source change not visible in Grafana | `k -n webshop rollout restart deploy/webshop-grafana` (dashboards reload by themselves within 30 s) |
-| Grafana rejects the admin password from `python tools/lab.py grafana-password` | Grafana stores the password in its database on first start; if the kept `webshop-grafana-admin` Secret was deleted but the Grafana volume was not, they disagree. Reset it: `k -n webshop exec deploy/webshop-grafana -c grafana -- grafana cli --homepath /usr/share/grafana admin reset-admin-password <password>` |
-| `helm dependency build` says `no repository definition` | add the three repos (section 7) |
+| Data source change not visible in Grafana | `kubectl -n webshop rollout restart deploy/webshop-grafana` (dashboards reload by themselves within 30 s) |
+| Grafana rejects the admin password from `python3 tools/lab.py grafana-password` | Grafana stores the password in its database on first start; if the kept `webshop-grafana-admin` Secret was deleted but the Grafana volume was not, they disagree. Set Grafana's password to the Secret's: `kubectl -n webshop exec deploy/webshop-grafana -c grafana -- grafana cli --homepath /usr/share/grafana admin reset-admin-password "$(python3 tools/lab.py grafana-password)"` |
+| `helm dependency build` says `no repository definition` | add the three repos (quick start, step 4) |
 
-## 15. Cleanup
+## 11. Cleanup
 
 Remove the release and everything it owns in the namespace:
 
 ```text
-python tools/lab.py fault reset
+python3 tools/lab.py fault reset
 helm uninstall webshop -n webshop
-k delete namespace webshop
+kubectl delete namespace webshop
 ```
 
 Left behind on purpose, so a reinstall finds its data: the six local
@@ -592,8 +628,8 @@ PersistentVolumes (`helm.sh/resource-policy: keep`) and the data in
 `Released` and will not bind again; delete them deliberately:
 
 ```text
-k get pv -l app.kubernetes.io/instance=webshop
-k delete pv -l app.kubernetes.io/instance=webshop
+kubectl get pv -l app.kubernetes.io/instance=webshop
+kubectl delete pv -l app.kubernetes.io/instance=webshop
 ```
 
 then the data itself **[on the worker]**:
@@ -602,117 +638,13 @@ then the data itself **[on the worker]**:
 sudo rm -rf /var/lib/webshop
 ```
 
-metrics-server (section 6) is a shared cluster component: remove it only if
+metrics-server (quick start, step 3) is a shared cluster component: remove it only if
 you installed it and nothing else uses it
 (`helm uninstall metrics-server -n kube-system`). The image stays in your
 registry. Nothing here touches the networking lessons' `three-tier`
 namespace, shared controllers, or AWS. To remove the whole disposable cluster,
-see [AWS/kubeadm/README.md, section 10](../../../README.md#10-destroy).
+see [AWS/kubeadm/README.md, section 10](../../README.md#10-destroy).
 
-## 16. Values reference
+---
 
-All values with comments: [`chart/values.yaml`](chart/values.yaml). The ones
-you are most likely to change:
-
-| Value | Default | Purpose |
-|---|---|---|
-| `image.registry` / `image.repository` / `image.tag` / `image.digest` | `docker.io` / `CHANGE-ME/webshop` / `0.1.0` / `""` | where the nodes pull the webshop image |
-| `imagePullSecrets` | `[]` | e.g. `[{name: regcred}]` |
-| `global.webshop.environment` / `clusterName` | `lab` / `kubernetes` | `deployment.environment.name`, `k8s.cluster.name` on every signal |
-| `components.<name>.replicas` / `.resources` / `.autoscaling` | see file | sizing and HPA bounds per component |
-| `app.*` | pool 5, timeouts 2 s / 1.5 s, attempts 2 / 3 | dependency policy; changes the config revision |
-| `app.httpKeepalive` | `false` | `true` reuses connections between services - and lets kube-proxy pin a caller's traffic to one replica (connection-level balancing) |
-| `dnsConfig` | `ndots: 2` | pod DNS options for the webshop's pods; `{}` restores the cluster default (`ndots:5`: every service lookup walks the search list first) |
-| `synthetic.ratePerSecond` / `deadlineSeconds` / `validationRatio` | `1.0` / `5` / `0.05` | the synthetic client and the SLI deadline |
-| `labControl.enabled` | `true` | the fault controller (faults are still off until set) |
-| `storage.mode` | `storageClass` (`localPV` in values-aws) | `storageClass` / `localPV` / `ephemeral` |
-| `storage.localPV.nodeName` / `basePath` | `worker` / `/var/lib/webshop` | where local PVs live |
-| `networkPolicy.enabled` | `true` | default-deny plus per-flow allow-lists |
-| `networkPolicy.apiServer.cidrs` / `kubelet.cidrs` | `0.0.0.0/0` (aws: `10.0.1.10/32`, `10.0.1.0/24`) | egress for API and kubelet access |
-| `postgresql.enabled` / `rabbitmq.enabled` + `external.*` + `existingSecret` | bundled | use existing servers |
-| `otel.endpoint` / `otel.headersSecret` | bundled Collector | send app telemetry elsewhere |
-| `observability.collector.{traces,logs,metrics}.*` | in-release backends | where the Collector exports (existing stack) |
-| `observability.alerts.sloTarget` | `0.99` | SLO used by the burn-rate alert |
-| `collector.enabled` / `prometheus.enabled` / `loki.enabled` / `tempo.enabled` / `grafana.enabled` | `true` | bundled telemetry components |
-| `exposure.ingress.*` / `exposure.httpRoute.*` | disabled | optional Ingress / HTTPRoute for the storefront (and Grafana) |
-
-## 17. Tests
-
-```text
-python -m venv .venv
-.venv\Scripts\activate          (Windows)      source .venv/bin/activate   (macOS / Linux)
-pip install --no-deps -r src/requirements.txt
-pip install -r src/requirements-dev.txt
-python -m pytest
-```
-
-Unit tests need nothing else. The integration tests (`tests/test_integration.py`:
-accepted vs fulfilled, idempotent checkout/reservations/captures, redelivery
-after a crash, the outbox under concurrent relays, trace continuity across the
-queue, the immutable request) need a PostgreSQL and a RabbitMQ; with Docker:
-
-```text
-docker run -d --name webshop-test-pg -p 15432:5432 -e POSTGRES_USER=webshop -e POSTGRES_PASSWORD=webshop -e POSTGRES_DB=webshop postgres:17.11-trixie
-docker run -d --name webshop-test-mq -p 15672:5672 rabbitmq:4.3.6
-```
-
-then set `WEBSHOP_TEST_PGHOST=localhost`, `WEBSHOP_TEST_PGPORT=15432`,
-`WEBSHOP_TEST_PGUSER=webshop`, `WEBSHOP_TEST_PGPASSWORD=webshop`,
-`WEBSHOP_TEST_AMQP_HOST=localhost`, `WEBSHOP_TEST_AMQP_PORT=15672` (PowerShell
-`$env:NAME="value"`, cmd `set NAME=value`) and run `python -m pytest` again.
-Without them those tests are skipped and say why.
-
-## 18. Layout, versions, and limitations
-
-```text
-webshop/
-├── README.md                this lesson
-├── src/                     the application (one Python package, one Dockerfile)
-├── chart/                   the Helm chart, Chart.lock, templates
-├── observability/           local chart: Collector pipeline, Prometheus config + alert rules,
-│                            Grafana data sources + dashboards (built by tools/build_dashboards.py)
-├── values/                  values-aws.yaml (primary), values-existing-backends.yaml,
-│                            values-ephemeral.yaml (overlay), values-kind.yaml (optional)
-├── tools/                   lab.py (faults, load, blind, verify), images.py, kind_cluster.py, build_dashboards.py
-├── tests/                   pytest: SLI, retries, propagation, lab-control, single export,
-│                            dashboards in sync, integration (PostgreSQL + RabbitMQ)
-└── docs/                    observability.md, incidents/, blind-exercises.md, answer-key/, verification.md,
-                             diagrams/ (the Kubernetes diagram and its KubeDiagrams config)
-```
-
-**Pinned versions:** Python 3.13.16 (slim), OpenTelemetry Python 1.45.0 /
-instrumentation 0.66b0, FastAPI 0.142.2, asyncpg 0.31.0, aio-pika 10.1.0;
-PostgreSQL 17.11, RabbitMQ 4.3.6, postgres_exporter 0.20.1; OpenTelemetry
-Collector contrib 0.161.0 (chart 0.175.0), Prometheus 3.15.0 (chart 29.35.0,
-kube-state-metrics 2.20.0), Loki 3.7.8 (chart 18.13.7), Tempo 3.1.0 (chart
-3.1.0), Grafana 13.2.3 (chart 13.2.7) - the Grafana, Loki and Tempo charts come
-from the community-maintained `grafana-community` repository, where they moved
-in 2026. metrics-server chart 3.14.0. Every Python dependency, direct and
-transitive, is pinned in `src/requirements.txt`.
-
-**Where it was verified:** [docs/verification.md](docs/verification.md) lists
-every check run, on what, and with what result - on a Kind cluster shaped
-like the lab, then on the AWS lab itself.
-
-**Limitations, honestly:**
-
-- Single-instance data and telemetry stores; no backups; local volumes share
-  the worker's root disk. This is a lab profile.
-- PostgreSQL keeps every order - nothing prunes it (~200 MiB a day at the
-  default rate, section 13). Telemetry stores are bounded by retention.
-- The numbers quoted in the walkthroughs come from one run each on a
-  lab-shaped Kind cluster; the AWS lab showed the same evidence with healthy
-  latencies 3-6x higher, and two differences in kind, both described where
-  they occur (exercise 6 never recovers during the surge; blind B1's queue
-  grows). Expect your numbers to differ, not the shape of the evidence.
-- Faults are simulated in the application (delays, errors, timeouts, held
-  connections, a wrong variant), not real infrastructure failures. Their
-  *effects* are real and measured the same way real ones would be.
-- The SLI comes from one synthetic client with a 0.4 s polling interval, so
-  measured completion times are upper bounds within 0.4 s; journeys in flight
-  when the load generator restarts are never evaluated.
-- The queue-wait span is reconstructed from the publish timestamp, so it
-  depends on node clocks being in sync (they are, on EC2).
-- `lab-control` is unauthenticated (reachable only by port-forward and by the
-  webshop's own pods) and in-memory by design.
-- Anonymous Grafana Editor access is a lab convenience.
+> [All steps](../../../../README.md#learning-path) · Previous: step 3, [Helm chart signing](../helm/README.md) · Next: step 6, [Networking on the webshop](docs/networking.md), or step 7, [OpenTelemetry](docs/opentelemetry.md)

@@ -1,5 +1,8 @@
 # AWS / kubeadm
 
+> **Step 1 of 8: Build the cluster** · Run from `AWS/kubeadm/` · Needs: an AWS account and the tools in section 1\
+> [All steps](../../README.md#learning-path) · Next: step 2, [Networking on a three-tier app](k8/README.md) · Step 8, [Tear down](#10-destroy), is section 10 of this page
+
 A disposable two-node Kubernetes cluster on AWS for CKA and CKS practice,
 built with `kubeadm` on plain EC2 — no EKS, no managed control plane, so
 every component is yours to inspect and break.
@@ -14,7 +17,7 @@ Lab layout:
 
 ```text
 AWS/kubeadm/        the Terraform project — terraform/aws commands run here
-AWS/kubeadm/k8/     hands-on networking lessons to run on the built cluster
+AWS/kubeadm/k8/     the lessons you run on the built cluster (steps 2-7 of the learning path)
 ```
 
 ```text
@@ -49,8 +52,26 @@ Parameter Store. The worker polls the status parameter, and joins once it
 reads `ready`. Terraform resource ordering is never relied on for this.
 
 **Cost:** two `t3.medium` instances ≈ $0.09/hour plus a few cents of EBS and
-one Advanced-tier SSM parameter ($0.05/month, prorated). Run
-`terraform destroy` the moment you stop practicing.
+one Advanced-tier SSM parameter ($0.05/month, prorated); ≈ $0.21/hour with
+a `t3.xlarge` worker (section 3). Run `terraform destroy` the moment you stop
+practicing.
+
+---
+
+**Contents**
+
+1. [Prerequisites](#1-prerequisites)
+2. [Authenticate to AWS](#2-authenticate-to-aws)
+3. [Create terraform.tfvars](#3-create-terraformtfvars)
+4. [Deploy](#4-deploy)
+5. [Watch the bootstrap](#5-watch-the-bootstrap)
+6. [Retrieve the kubeconfig](#6-retrieve-the-kubeconfig)
+7. [Verify the cluster](#7-verify-the-cluster)
+8. [Shell access to the nodes](#8-shell-access-to-the-nodes)
+9. [Troubleshooting](#9-troubleshooting)
+10. [Destroy](#10-destroy)
+
+Also: [Design notes, assumptions, and limitations](#design-notes-assumptions-and-limitations) · [Variable reference](#variable-reference)
 
 ---
 
@@ -158,6 +179,21 @@ Only this CIDR can reach the Kubernetes API (and SSH, if you enable it) —
 nothing is exposed to `0.0.0.0/0`. A `/32` is the only accepted form; wider
 prefixes are rejected, so a slip cannot quietly widen who can reach the API.
 
+### Optional: a bigger worker for the webshop
+
+Step 6 of the [learning path](../../README.md#learning-path), networking on
+the webshop, adds an Ingress controller and Envoy Gateway to the worker,
+which leaves a `t3.medium` little headroom. If you will do it, uncomment this
+line in `terraform.tfvars`:
+
+```hcl
+worker_instance_type = "t3.xlarge"
+```
+
+Everything else fits the default. Setting it on a running lab works too:
+`terraform apply` then resizes the worker in place (about two minutes; same
+disk, private IP and node name, new public IP).
+
 ## 4. Deploy
 
 From the `AWS/kubeadm/` directory:
@@ -246,62 +282,9 @@ kubectl get pods -n calico-system         # calico-node Running on BOTH nodes
 kubectl get tigerastatus                  # calico: AVAILABLE True
 ```
 
-### Both nodes Ready? Go do the labs
-
-The cluster is the means; **[`k8/README.md`](k8/README.md)** is the point. It
-is a hands-on networking curriculum taught on one three-tier app
-(frontend → api → db). Most modules close with an **Under the hood** step
-that drops you onto a node to read the kernel state your `kubectl` command
-just produced — `sudo nft list ruleset` for the rules kube-proxy and Calico
-programmed, `sudo conntrack -L` for the connections actually flowing through
-them:
-
-| Module | What you build and then take apart |
-| --- | --- |
-| [1 — Pod networking](k8/README.md#module-1--pod-networking-every-pod-gets-a-real-ip) | Every pod gets a routable IP; cross-node traffic over Calico VXLAN |
-| [2 — ClusterIP](k8/README.md#module-2--clusterip-services-a-stable-virtual-ip-in-front-of-pods) | The virtual IP that exists only as NAT rules — plus your first `nft`/`conntrack` read |
-| [3 — CoreDNS](k8/README.md#module-3--coredns-names-instead-of-virtual-ips) | Service names, search domains, `ndots:5`, and stale UDP conntrack entries |
-| [4 — Walk the chain](k8/README.md#module-4--walk-the-chain) | One request through both Services, traced hop by hop |
-| [5 — NodePort](k8/README.md#module-5--nodeport-the-simplest-way-in-from-outside) | Reaching the app from outside; the double NAT; `externalTrafficPolicy` |
-| [6 — Ingress](k8/README.md#module-6--ingress-http-routing-behind-one-entry-point) | ingress-nginx, host and path routing behind one entry point |
-| [7 — Gateway API](k8/README.md#module-7--gateway-api-the-successor) | Envoy Gateway, GatewayClass/Gateway/HTTPRoute — Ingress's successor |
-| [8 — NetworkPolicy](k8/README.md#module-8--networkpolicy-firewalling-the-tiers) | Default-deny, then re-open tier by tier; reading Calico's chains and the drop signature |
-| [9 — Cleanup](k8/README.md#module-9--cleanup) | Tear the lesson down without touching the cluster |
-
-Modules are self-contained — each opens with a Prerequisites block, so you
-can jump straight to the one you need.
-
-Alongside them, **[`k8/helm/README.md`](k8/helm/README.md)** takes the same
-three-tier app and packages it as a GPG-signed Helm chart: `helm package
---sign`, push to an OCI registry, `helm pull --verify`, and a read of what a
-provenance file actually binds. It needs no cluster until the install step, so
-it is the one lesson here you can work through with everything destroyed.
-
-**Want a 60-second proof that Calico enforces NetworkPolicy** before starting
-the lessons? Module 8 is the full treatment, but this is the short version:
-
-```text
-kubectl create namespace np-test
-kubectl -n np-test run web --image=nginx --port=80 --expose
-kubectl -n np-test run client --image=busybox:1.36 -- sleep 3600
-kubectl -n np-test wait --for=condition=Ready pod/web pod/client --timeout=120s
-kubectl -n np-test exec client -- wget -qO- --timeout=3 http://web    # nginx welcome page
-kubectl -n np-test create -f - <<'EOF'
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-ingress
-spec:
-  podSelector: {}
-  policyTypes:
-    - Ingress
-EOF
-kubectl -n np-test exec client -- wget -qO- --timeout=3 http://web    # now TIMES OUT
-kubectl delete namespace np-test
-```
-
-The heredoc is Bash/macOS/Linux syntax; on Windows, save the YAML to a file
-and `kubectl -n np-test apply -f` it.
+Both nodes `Ready` and Calico `AVAILABLE`: the cluster is built. **Next:**
+step 2, [Networking on a three-tier app](k8/README.md), or any step in the
+[learning path](../../README.md#learning-path).
 
 ## 8. Shell access to the nodes
 
@@ -499,6 +482,7 @@ points at no longer exists.
 | `admin_cidr` | — (required unless auto-detecting) | Your IP as a `/32`; only source allowed to API + SSH. Wider prefixes rejected |
 | `auto_detect_admin_cidr` | `false` | Look up your public IP at plan time instead of setting `admin_cidr` |
 | `instance_type` | `t3.medium` | Both nodes' instance type (x86_64) |
+| `worker_instance_type` | `null` (= `instance_type`) | The worker's instance type only; changing it later resizes the worker in place (stop/start: same disk and private IP, new public IP) |
 | `root_volume_size_gb` | `30` | Encrypted gp3 root volume size |
 | `ubuntu_release` | `24.04` | `22.04` or `24.04` |
 | `kubernetes_version` | `1.33` | K8s minor version from pkgs.k8s.io (≥ 1.31) |
@@ -509,3 +493,7 @@ points at no longer exists.
 | `service_cidr` | `10.96.0.0/12` | Service network |
 | `ssh_enabled` | `false` | Open port 22 from `admin_cidr` + install key pair |
 | `ssh_public_key_path` | `""` | Existing public key file (required if SSH enabled) |
+
+---
+
+> [All steps](../../README.md#learning-path) · Next: step 2, [Networking on a three-tier app](k8/README.md)

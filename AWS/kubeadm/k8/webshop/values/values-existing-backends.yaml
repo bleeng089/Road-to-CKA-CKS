@@ -21,7 +21,7 @@ global:
 image:
   registry: registry.example.com
   repository: team/webshop
-  tag: "0.1.0"
+  tag: "0.2.0"
 imagePullSecrets:
   - name: regcred
 

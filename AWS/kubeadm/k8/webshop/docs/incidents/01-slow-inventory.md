@@ -1,6 +1,9 @@
 # Incident 1 - Slow inventory
 
-**Start:** `python tools/lab.py fault apply slow-inventory`
+> **Step 5 of 8: Incident and blind exercises** · Exercise 1 of 9 · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
+> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Next: [Incident 2, Exhausted database pool](02-pool-exhaustion.md)
+
+**Start:** `python3 tools/lab.py fault apply slow-inventory`
 **Injected (known-fault exercise):** every stock reservation in the inventory
 service waits 1.7-2.2 s before doing its work. Checkout's per-attempt timeout
 for inventory is 2 s, with 2 attempts.
@@ -111,10 +114,14 @@ refused by the tombstone). No stock stays held by an order that failed.
 ## Recovery
 
 ```text
-python tools/lab.py fault reset
+python3 tools/lab.py fault reset
 ```
 
 Within a minute: checkout p95 back to **~30 ms**, no 504s, no inventory
 timeouts, and the SLI back to **100%** over the following 2-minute window.
 The *SLI, 5-minute window* panel takes five minutes to clear completely - that
 is the window, not the system.
+
+---
+
+> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Next: [Incident 2, Exhausted database pool](02-pool-exhaustion.md)

@@ -1,0 +1,84 @@
+# KubeDiagrams configuration for the README's data-flow diagram
+# (dataflow-aws.png): the webshop release's workloads and Services, with the
+# README flowchart's arrows drawn between them. Redraw both diagrams from the
+# webshop directory, after `helm dependency build ./chart`:
+#
+#   python3 tools/draw_diagrams.py
+#
+# The script feeds this file the release without its ConfigMaps and Secrets
+# (KubeDiagrams 0.9 cannot hide kinds that environment variables reference)
+# and lays the result out left to right, like the flowchart.
+#
+# Node IDs below assume release "webshop" in namespace "webshop".
+
+default_namespace: webshop
+
+# Group by Helm chart, then by component (as in kube-diagrams.yaml).
+clusters:
+  - {label: app.kubernetes.io/instance, show: false}
+  - {label: app.kubernetes.io/name, show: false}
+
+# Only what carries data: no configuration, storage, autoscaling, policy or
+# RBAC objects. lab-control stays (it is an object of the release) but gets
+# no arrows: every pod polls it, and the flowchart leaves it out too.
+nodes:
+  PersistentVolumeClaim/v1: {show: false}
+  PersistentVolume/v1: {show: false}
+  HorizontalPodAutoscaler/autoscaling/v2: {show: false}
+  NetworkPolicy/networking.k8s.io/v1: {show: false}
+  ServiceAccount/v1: {show: false}
+  Role/rbac.authorization.k8s.io/v1: {show: false}
+  RoleBinding/rbac.authorization.k8s.io/v1: {show: false}
+  ClusterRole/rbac.authorization.k8s.io/v1: {show: false}
+  ClusterRoleBinding/rbac.authorization.k8s.io/v1: {show: false}
+
+# The flowchart's arrows, from the calling workload to the Service it calls
+# (the Service's dashed arrow then shows which pods answer). Grey: requests
+# of the shop. Blue: telemetry - dotted where it leaves the component it
+# describes, solid inside the telemetry stack. weight "8" keeps the main
+# request path on one line; weight "0" stops telemetry arrows from pulling
+# the shop apart.
+diagram:
+  nodes:
+    you: {name: "you\n(port-forward)", type: diagrams.onprem.client.User}
+    k8s: {name: "Kubernetes API,\nkubelets", type: diagrams.k8s.controlplane.APIServer}
+  edges:
+    # requests
+    - {from: you, to: webshop-storefront/webshop/Service/v1, xlabel: HTTP}
+    - {from: webshop-loadgen/webshop/Deployment/apps/v1, to: webshop-storefront/webshop/Service/v1, xlabel: HTTP, weight: "8"}
+    - {from: webshop-storefront/webshop/Deployment/apps/v1, to: webshop-checkout/webshop/Service/v1, weight: "8"}
+    - {from: webshop-storefront/webshop/Deployment/apps/v1, to: webshop-inventory/webshop/Service/v1}
+    - {from: webshop-checkout/webshop/Deployment/apps/v1, to: webshop-inventory/webshop/Service/v1}
+    - {from: webshop-checkout/webshop/Deployment/apps/v1, to: webshop-payment/webshop/Service/v1}
+    - {from: webshop-checkout/webshop/Deployment/apps/v1, to: webshop-postgresql/webshop/Service/v1, xlabel: "orders + outbox"}
+    - {from: webshop-checkout/webshop/Deployment/apps/v1, to: webshop-rabbitmq/webshop/Service/v1, xlabel: "outbox relay", weight: "8"}
+    - {from: webshop-rabbitmq/webshop/StatefulSet/apps/v1, to: webshop-fulfillment/webshop/Deployment/apps/v1, weight: "8"}
+    - {from: webshop-fulfillment/webshop/Deployment/apps/v1, to: webshop-payment/webshop/Service/v1}
+    - {from: webshop-fulfillment/webshop/Deployment/apps/v1, to: webshop-inventory/webshop/Service/v1}
+    - {from: webshop-fulfillment/webshop/Deployment/apps/v1, to: webshop-postgresql/webshop/Service/v1, weight: "8"}
+    - {from: webshop-inventory/webshop/Deployment/apps/v1, to: webshop-postgresql/webshop/Service/v1}
+    - {from: webshop-payment/webshop/Deployment/apps/v1, to: webshop-postgresql/webshop/Service/v1}
+    - {from: webshop-migrate-1/webshop/Job/batch/v1, to: webshop-postgresql/webshop/Service/v1, xlabel: "schema + seed"}
+    - {from: webshop-loadgen/webshop/Deployment/apps/v1, to: webshop-payment/webshop/Service/v1, style: dotted, xlabel: "independent check:\npayment ledger"}
+    # telemetry leaving the components
+    - {from: webshop-storefront/webshop/Deployment/apps/v1, to: webshop-collector/webshop/Service/v1, style: dotted, color: "#1565c0", weight: "0"}
+    - {from: webshop-checkout/webshop/Deployment/apps/v1, to: webshop-collector/webshop/Service/v1, style: dotted, color: "#1565c0", weight: "0", xlabel: "OTLP/HTTP"}
+    - {from: webshop-inventory/webshop/Deployment/apps/v1, to: webshop-collector/webshop/Service/v1, style: dotted, color: "#1565c0", weight: "0"}
+    - {from: webshop-payment/webshop/Deployment/apps/v1, to: webshop-collector/webshop/Service/v1, style: dotted, color: "#1565c0", weight: "0"}
+    - {from: webshop-fulfillment/webshop/Deployment/apps/v1, to: webshop-collector/webshop/Service/v1, style: dotted, color: "#1565c0", weight: "0"}
+    - {from: webshop-loadgen/webshop/Deployment/apps/v1, to: webshop-collector/webshop/Service/v1, style: dotted, color: "#1565c0", weight: "0"}
+    - {from: webshop-postgresql/webshop/StatefulSet/apps/v1, to: webshop-prometheus-server/webshop/Deployment/apps/v1, style: dotted, color: "#1565c0", weight: "0", xlabel: "exporter :9187"}
+    - {from: webshop-rabbitmq/webshop/StatefulSet/apps/v1, to: webshop-prometheus-server/webshop/Deployment/apps/v1, style: dotted, color: "#1565c0", weight: "0", xlabel: ":15692"}
+    - {from: k8s, to: webshop-collector/webshop/Deployment/apps/v1, style: dotted, color: "#1565c0", weight: "0", xlabel: events}
+    - {from: k8s, to: webshop-kube-state-metrics/webshop/Deployment/apps/v1, style: dotted, color: "#1565c0", weight: "0", xlabel: "object state"}
+    - {from: k8s, to: webshop-prometheus-server/webshop/Deployment/apps/v1, style: dotted, color: "#1565c0", weight: "0", xlabel: cAdvisor}
+    # inside the telemetry stack
+    - {from: webshop-collector/webshop/Deployment/apps/v1, to: webshop-tempo/webshop/Service/v1, color: "#1565c0", xlabel: OTLP}
+    - {from: webshop-collector/webshop/Deployment/apps/v1, to: webshop-loki/webshop/Service/v1, color: "#1565c0", xlabel: OTLP, weight: "8"}
+    - {from: webshop-collector/webshop/Deployment/apps/v1, to: webshop-prometheus-server/webshop/Deployment/apps/v1, style: dotted, color: "#1565c0", xlabel: "/metrics :8889,\nscraped per pod"}
+    - {from: webshop-kube-state-metrics/webshop/Deployment/apps/v1, to: webshop-prometheus-server/webshop/Deployment/apps/v1, style: dotted, color: "#1565c0"}
+    - {from: webshop-prometheus-server/webshop/Service/v1, to: webshop-grafana/webshop/Deployment/apps/v1, color: "#1565c0"}
+    - {from: webshop-loki/webshop/Service/v1, to: webshop-grafana/webshop/Deployment/apps/v1, color: "#1565c0", weight: "8"}
+    - {from: webshop-tempo/webshop/Service/v1, to: webshop-grafana/webshop/Deployment/apps/v1, color: "#1565c0"}
+    # layout only: the Collector to the right of the shop
+    - {from: webshop-postgresql/webshop/StatefulSet/apps/v1, to: webshop-collector/webshop/Service/v1, style: invis, weight: "4"}

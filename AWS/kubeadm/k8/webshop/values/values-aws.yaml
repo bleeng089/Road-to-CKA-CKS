@@ -5,9 +5,12 @@
 # keeps its NoSchedule taint, so everything below runs on the worker. There
 # is no StorageClass and no volume provisioner, so durable components use
 # local PersistentVolumes on the worker (create the directories first:
-# README, "Storage"). See the README's capacity budget for how this fits.
+# README quick start, step 2). See the README's capacity budget for how this fits.
 #
-#   helm upgrade --install webshop ./chart -n webshop --create-namespace -f values/values-aws.yaml --set image.repository=<your-registry-user>/webshop
+#   helm upgrade --install webshop ./chart -n webshop --create-namespace -f values/values-aws.yaml
+#
+# The image defaults to the public docker.io/bleeng089/webshop; to run your
+# own build add --set image.repository=<your-registry-user>/webshop.
 
 global:
   webshop:
@@ -16,8 +19,8 @@ global:
 
 image:
   registry: docker.io
-  repository: CHANGE-ME/webshop    # override with --set image.repository=...
-  tag: "0.1.0"
+  repository: bleeng089/webshop   # public; override with --set image.repository=...
+  tag: "0.2.0"
 
 storage:
   mode: localPV

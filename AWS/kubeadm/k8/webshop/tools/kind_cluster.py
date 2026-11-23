@@ -135,7 +135,7 @@ def create(_: argparse.Namespace) -> None:
     worker = f"{NAME}-worker"
     run("docker", "exec", worker, "mkdir", "-p", *[f"/var/lib/webshop/{d}" for d in STORAGE_DIRS])
     print(f"\nCluster ready: kubectl --context {ctx} get nodes")
-    print("Next: python tools/images.py build --tag 0.1.0 && python tools/kind_cluster.py load")
+    print("Next: python tools/images.py build --tag 0.2.0 && python tools/kind_cluster.py load")
 
 
 def load(args: argparse.Namespace) -> None:
@@ -165,7 +165,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("create").set_defaults(fn=create)
     p = sub.add_parser("load")
-    p.add_argument("images", nargs="*", default=["webshop:0.1.0"], help="local images (default webshop:0.1.0)")
+    p.add_argument("images", nargs="*", default=["webshop:0.2.0"], help="local images (default webshop:0.2.0)")
     p.set_defaults(fn=load)
     sub.add_parser("delete").set_defaults(fn=delete)
     args = parser.parse_args()

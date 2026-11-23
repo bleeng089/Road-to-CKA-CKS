@@ -1,0 +1,29 @@
+# Overlay for the networking track (docs/networking.md), on top of the lab
+# profile:
+#
+#   helm upgrade webshop ./chart -n webshop -f values/values-aws.yaml -f networking/values-networking.yaml
+#
+# Later files win, key by key; everything not mentioned here keeps the
+# values-aws.yaml (and chart default) setting. `helm get values webshop -n
+# webshop` shows the merged user-supplied values.
+
+components:
+  storefront:
+    # Two endpoints behind the storefront Service, so load balancing is
+    # visible (X-Served-By). Both numbers: the HPA owns the replica count
+    # once it exists, and would scale a lone pod's Deployment back to 1.
+    replicas: 2
+    autoscaling: {minReplicas: 2}
+
+exposure:
+  # Module 5: the storefront Service becomes type NodePort on :30080.
+  nodePort:
+    enabled: true
+  # Module 6: an Ingress for ingress-nginx (inert until the controller exists).
+  ingress:
+    enabled: true
+
+networkPolicy:
+  # Modules 6 and 7: the controllers' proxies connect to the storefront pods
+  # from these namespaces, so the default-deny policies must admit them.
+  ingressControllerNamespaces: [ingress-nginx, envoy-gateway-system]

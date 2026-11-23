@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Operator CLI for the webshop lab: faults, load, blind exercises, verification.
 
-Run from AWS/kubeadm/k8/helm/webshop/ with kubectl pointed at the cluster
+Run from AWS/kubeadm/k8/webshop/ with kubectl pointed at the cluster
 (KUBECONFIG / current context, or --context). Standard library only; works
 from PowerShell, cmd, macOS and Linux.
 
     python tools/lab.py status                        what lab-control sees
     python tools/lab.py fault presets                 the known-fault exercises
     python tools/lab.py fault apply slow-inventory    start one (see docs/incidents/)
+    python tools/lab.py fault apply policy-drop       the one Kubernetes-level fault: edits a NetworkPolicy
     python tools/lab.py fault list | remove NAME | reset
     python tools/lab.py fault set NAME --kind K --service S [--instance POD] [--param k=v ...]
     python tools/lab.py load set --rate 6 [--duration 600] | load reset
@@ -18,7 +19,9 @@ from PowerShell, cmd, macOS and Linux.
     python tools/lab.py forward grafana|storefront|prometheus|lab-control
 
 lab-control is reached through `kubectl port-forward` (it is never exposed,
-and NetworkPolicy admits only the webshop's own pods).
+and NetworkPolicy admits only the webshop's own pods). policy-drop is the
+exception: it changes the cluster, not lab-control - it saves the
+NetworkPolicy it edits to .lab-state/ and `fault reset` puts it back.
 """
 
 from __future__ import annotations
@@ -41,6 +44,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".lab-state"
 SCENARIOS = ROOT / "docs" / "answer-key" / "blind-scenarios.json"
+NETPOL_BACKUP = STATE_DIR / "netpol-backup.json"
 
 # ------------------------------------------------------------- presets
 # The known-fault exercises (docs/incidents/NN-*.md). "replica" targets are
@@ -90,6 +94,13 @@ PRESETS: dict[str, dict] = {
              "params": {"operation": "capture", "timeout_rate": 0.4, "timeout_delay_ms": 2000}},
             {"kind": "idempotency_bypass", "service": "fulfillment"},
         ],
+    },
+    # Not an application fault: removes payment from fulfillment's egress
+    # allow-list, the kind of change a policy "tightening" makes by accident.
+    "policy-drop": {
+        "doc": "docs/incidents/09-policy-drop.md",
+        "faults": [],
+        "netpol": {"policy": "fulfillment-egress", "drop": "payment"},
     },
 }
 
@@ -192,6 +203,41 @@ def apply_faults(base: str, name: str, faults: list[dict], *, duration: float | 
             print(f"fault {fault_name}: {spec['kind']} on {spec['service']} ({target}) params={body['params']}")
 
 
+def netpol_drop(lab: Lab, policy: str, drop: str) -> None:
+    """Remove one destination from a NetworkPolicy's egress allow-list,
+    keeping the original in .lab-state/ for netpol_restore."""
+    if NETPOL_BACKUP.exists():
+        raise SystemExit("a policy fault is already applied; `fault reset` first")
+    obj = json.loads(lab.kubectl("get", "networkpolicy", lab.svc(policy), "-o", "json"))
+    for key in ("resourceVersion", "uid", "creationTimestamp", "generation", "managedFields"):
+        obj["metadata"].pop(key, None)
+    STATE_DIR.mkdir(exist_ok=True)
+    NETPOL_BACKUP.write_text(json.dumps(obj, indent=2))
+    rules = []
+    for rule in obj["spec"].get("egress", []):
+        kept = [peer for peer in rule.get("to", [])
+                if peer.get("podSelector", {}).get("matchLabels", {}).get("app.kubernetes.io/component") != drop]
+        # an egress rule with an empty `to` allows every destination - drop the rule instead
+        if kept:
+            rules.append({**rule, "to": kept})
+    obj["spec"]["egress"] = rules
+    lab.kubectl("replace", "-f", "-", input_text=json.dumps(obj))
+    print(f"networkpolicy {lab.svc(policy)}: removed egress to {drop} (original saved in {NETPOL_BACKUP.name})")
+
+
+def netpol_restore(lab: Lab) -> None:
+    if not NETPOL_BACKUP.exists():
+        return
+    saved = NETPOL_BACKUP.read_text()
+    name = json.loads(saved)["metadata"]["name"]
+    if lab.kubectl("get", "networkpolicy", name, "--ignore-not-found", "-o", "name").strip():
+        lab.kubectl("replace", "-f", "-", input_text=saved)
+    else:
+        lab.kubectl("create", "-f", "-", input_text=saved)
+    NETPOL_BACKUP.unlink()
+    print(f"networkpolicy {name}: restored")
+
+
 # ------------------------------------------------------------- commands
 
 def cmd_status(lab: Lab, _: argparse.Namespace) -> None:
@@ -212,10 +258,20 @@ def cmd_fault(lab: Lab, args: argparse.Namespace) -> None:
             flag = "  [SAFEGUARD BYPASS]" if preset.get("safeguard_bypass") else ""
             print(f"{name:22} {preset['doc']}{flag}")
         return
+    if args.action == "apply" and args.name in PRESETS and PRESETS[args.name].get("netpol"):
+        netpol_drop(lab, **PRESETS[args.name]["netpol"])
+        print(f"walkthrough: {PRESETS[args.name]['doc']}")
+        return
+    if args.action == "remove" and PRESETS.get(args.name, {}).get("netpol"):
+        netpol_restore(lab)
+        return
     with lab.forward(lab.svc("lab-control"), 80) as base:
         if args.action == "list":
             _, body = http("GET", f"{base}/v1/faults")
-            if not body["faults"]:
+            if NETPOL_BACKUP.exists():
+                name = json.loads(NETPOL_BACKUP.read_text())["metadata"]["name"]
+                print(f"{'policy-drop':24} {'networkpolicy':18} {name} edited (original in .lab-state/)")
+            elif not body["faults"]:
                 print("no faults")
             for f in body["faults"]:
                 window = ""
@@ -263,6 +319,7 @@ def cmd_fault(lab: Lab, args: argparse.Namespace) -> None:
         elif args.action == "reset":
             _, body = http("DELETE", f"{base}/v1/faults")
             print(f"removed {body['deleted']} fault(s); load back to the Helm default")
+            netpol_restore(lab)
 
 
 def cmd_load(lab: Lab, args: argparse.Namespace) -> None:

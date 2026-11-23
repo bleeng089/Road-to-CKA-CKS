@@ -1,0 +1,11 @@
+# Module 7 of the networking track: the chart's HTTPRoute, attached to the
+# Gateway in networking/gateway/. Add it only once the Gateway API CRDs exist
+# (Envoy Gateway's install manifest brings them) - without them the
+# HTTPRoute kind is unknown and the whole upgrade fails:
+#
+#   helm upgrade webshop ./chart -n webshop -f values/values-aws.yaml -f networking/values-networking.yaml -f networking/values-gateway.yaml
+
+exposure:
+  httpRoute:
+    enabled: true
+    parentRefs: [{name: webshop-gateway}]

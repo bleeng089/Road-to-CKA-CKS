@@ -1,8 +1,8 @@
 # One image for every webshop component; the chart selects the component
 # with the container args (python -m webshop <component>).
 #
-# Build for the EC2 nodes (x86_64), from AWS/kubeadm/k8/helm/webshop/:
-#   docker buildx build --platform linux/amd64 -t <registry>/webshop:0.1.0 --push src
+# Build for the EC2 nodes (x86_64), from AWS/kubeadm/k8/webshop/:
+#   docker buildx build --platform linux/amd64 -t <registry>/webshop:0.2.0 --push src
 FROM python:3.13.16-slim-trixie
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -16,7 +16,7 @@ RUN pip install --no-deps -r requirements.txt
 
 COPY webshop ./webshop
 
-ARG WEBSHOP_VERSION=0.1.0
+ARG WEBSHOP_VERSION=0.2.0
 ENV WEBSHOP_VERSION=${WEBSHOP_VERSION}
 
 # Unprivileged, and compatible with readOnlyRootFilesystem (nothing writes

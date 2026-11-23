@@ -1,6 +1,9 @@
 # Incident 3 - Retry amplification
 
-**Start:** `python tools/lab.py fault apply retry-amplification`
+> **Step 5 of 8: Incident and blind exercises** · Exercise 3 of 9 · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
+> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 2, Exhausted database pool](02-pool-exhaustion.md) · Next: [Incident 4, Bad replica](04-bad-replica.md)
+
+**Start:** `python3 tools/lab.py fault apply retry-amplification`
 **Injected (known-fault exercise):** the payment simulator answers 35% of
 calls with 503 (before doing anything) and holds another 15% for 2.5 s after
 doing the work - longer than the callers' 1.5 s timeout. Both authorize
@@ -114,9 +117,13 @@ struggling service even more.
 ## Recovery
 
 ```text
-python tools/lab.py fault reset
+python3 tools/lab.py fault reset
 ```
 
 Two minutes later: attempts per operation back to **1.0**, no retries, SLI
 **100%**. Payment's request rate drops by the amplification it had been
 carrying (5.1 -> 3.6 requests/s including lookups).
+
+---
+
+> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 2, Exhausted database pool](02-pool-exhaustion.md) · Next: [Incident 4, Bad replica](04-bad-replica.md)

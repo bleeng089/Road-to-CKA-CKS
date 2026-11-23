@@ -1,6 +1,9 @@
 # Incident 4 - Bad replica
 
-**Start:** `python tools/lab.py fault apply bad-replica` (checkout runs two
+> **Step 5 of 8: Incident and blind exercises** · Exercise 4 of 9 · Run from `AWS/kubeadm/k8/webshop/` · Needs: the webshop (step 4)\
+> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 3, Retry amplification](03-retry-amplification.md) · Next: [Incident 5, Incorrect fulfillment](05-incorrect-fulfillment.md)
+
+**Start:** `python3 tools/lab.py fault apply bad-replica` (checkout runs two
 replicas by default; the preset targets the first by pod name - pick another
 with `--replica 1` or `--instance <pod>`)
 **Injected (known-fault exercise):** one checkout pod calls inventory with a
@@ -107,10 +110,14 @@ and *what* fails, not *why*.
 ## Recovery
 
 ```text
-python tools/lab.py fault reset
+python3 tools/lab.py fault reset
 ```
 
 Observed two minutes later: no inventory timeouts, SLI **100%**, both pods'
-p95 back to 30-40 ms. (Replacing the bad pod - `k -n webshop delete pod <pod>` -
+p95 back to 30-40 ms. (Replacing the bad pod - `kubectl -n webshop delete pod <pod>` -
 would also have fixed it in real life: a fresh pod starts from the deployed
 configuration.)
+
+---
+
+> [All steps](../../../../../../README.md#learning-path) · [All exercises](../../README.md#5-incident-exercises) · Previous: [Incident 3, Retry amplification](03-retry-amplification.md) · Next: [Incident 5, Incorrect fulfillment](05-incorrect-fulfillment.md)

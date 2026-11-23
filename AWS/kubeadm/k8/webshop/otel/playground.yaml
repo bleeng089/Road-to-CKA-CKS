@@ -1,0 +1,160 @@
+# A place to run OpenTelemetry code inside the cluster, for the OpenTelemetry
+# track (docs/opentelemetry.md).
+#
+# The pod runs the webshop's own image, so every script uses exactly the SDK,
+# exporters and instrumentation libraries the services use (Python 3.13,
+# opentelemetry-sdk 1.45). It does nothing by itself; the lessons pipe a
+# script from otel/ into it:
+#
+#   kubectl -n webshop exec -i otel-playground -- python - < otel/hello.py
+#
+# The webshop namespace is default-deny (the chart's NetworkPolicies). The
+# policies below make the playground a planned client of the Collector, the
+# storefront, inventory and Tempo - and nothing else. Like networking/tester.yaml
+# they only add: the chart's own policies stay untouched.
+#
+# Built your own image (docs/install.md)? Put its name in `image:` below.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: otel-playground
+  namespace: webshop
+  labels:
+    app.kubernetes.io/name: otel-playground
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    seccompProfile: {type: RuntimeDefault}
+  dnsConfig:
+    options:
+      - {name: ndots, value: "2"}
+  containers:
+    - name: playground
+      image: docker.io/bleeng089/webshop:0.2.0
+      command: [sleep, infinity]
+      env:
+        # Where the OTLP exporters send everything (the same Collector the
+        # services use). The SDK reads these variables itself.
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://webshop-collector.webshop.svc.cluster.local:4318
+        - name: OTEL_EXPORTER_OTLP_PROTOCOL
+          value: http/protobuf
+        # The pod's identity, merged into every script's Resource - the same
+        # Downward API wiring the chart gives the services.
+        - name: POD_NAME
+          valueFrom: {fieldRef: {fieldPath: metadata.name}}
+        - name: POD_UID
+          valueFrom: {fieldRef: {fieldPath: metadata.uid}}
+        - name: POD_NAMESPACE
+          valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+        - name: NODE_NAME
+          valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME)
+        # print() output reaches your terminal as it happens, not at exit
+        - name: PYTHONUNBUFFERED
+          value: "1"
+      resources:
+        requests: {cpu: 20m, memory: 96Mi}
+        limits: {memory: 384Mi}
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: {drop: [ALL]}
+      volumeMounts:
+        - {name: tmp, mountPath: /tmp}
+  volumes:
+    - name: tmp
+      emptyDir: {sizeLimit: 16Mi}
+  terminationGracePeriodSeconds: 0
+---
+# Sender side: what the playground may connect to.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-playground-egress
+  namespace: webshop
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: otel-playground}
+  policyTypes: [Egress]
+  egress:
+    # the Collector's OTLP receivers (gRPC 4317, HTTP 4318)
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/instance: webshop, app.kubernetes.io/name: collector}
+      ports:
+        - {protocol: TCP, port: 4317}
+        - {protocol: TCP, port: 4318}
+    # two of the shop's services, to send them requests with trace context
+    - to:
+        - podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/instance, operator: In, values: [webshop]}
+              - {key: app.kubernetes.io/component, operator: In, values: [storefront, inventory]}
+      ports:
+        - {protocol: TCP, port: 8080}
+    # Tempo's own OTLP receiver - only for the "straight to a backend" export in Module 4
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/instance: webshop, app.kubernetes.io/name: tempo}
+      ports:
+        - {protocol: TCP, port: 4318}
+---
+# Receiver side: the Collector accepts OTLP from the playground.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-playground-to-collector
+  namespace: webshop
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/instance: webshop, app.kubernetes.io/name: collector}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: otel-playground}
+      ports:
+        - {protocol: TCP, port: 4317}
+        - {protocol: TCP, port: 4318}
+---
+# Receiver side: storefront and inventory accept the playground's requests.
+# Ports are pod ports (8080), not Service ports (80): policies see packets
+# after kube-proxy's DNAT.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-playground-to-apps
+  namespace: webshop
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/instance, operator: In, values: [webshop]}
+      - {key: app.kubernetes.io/component, operator: In, values: [storefront, inventory]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: otel-playground}
+      ports:
+        - {protocol: TCP, port: 8080}
+---
+# Receiver side: Tempo accepts OTLP/HTTP from the playground (Module 4).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-playground-to-tempo
+  namespace: webshop
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/instance: webshop, app.kubernetes.io/name: tempo}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: otel-playground}
+      ports:
+        - {protocol: TCP, port: 4318}
